@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::commands::AppState;
 use crate::error::{AppError, AppResult};
-use crate::storage::hosts::SavedHost;
+use crate::storage::hosts::{HostsStore, SavedHost};
 use crate::storage::keyring;
 use crate::storage::secrets::SecretStore;
 use crate::types::{HostListDto, HostSaveRequest, SavedHostDto};
@@ -61,33 +61,45 @@ fn from_dto(dto: &SavedHostDto) -> SavedHost {
 /// 新增或更新主机。秘密（若有）写入凭据库。
 #[tauri::command]
 pub fn host_save(state: State<'_, AppState>, request: HostSaveRequest) -> AppResult<HostListDto> {
+    save_host(&state.hosts, &state.secrets, request)
+}
+
+/// 保存主机 + 秘密。**不依赖 Tauri**，方便单独测。
+///
+/// 秘密只写进凭据库；`hosts.json` 里只留「有没有」的标记（缺陷 #1）。
+pub fn save_host(
+    hosts: &HostsStore,
+    secrets: &SecretStore,
+    request: HostSaveRequest,
+) -> AppResult<HostListDto> {
     let mut host = from_dto(&request.host);
+
+    // 空 id 表示「这是台新机器」—— id 由后端分配，前端不用自己生成。
+    if host.id.trim().is_empty() {
+        host.id = uuid::Uuid::now_v7().to_string();
+    }
 
     // 密码
     if let Some(pw) = request.password.as_ref().filter(|p| !p.is_empty()) {
-        state
-            .secrets
-            .set(&keyring::password_account(&host.id), pw)?;
+        secrets.set(&keyring::password_account(&host.id), pw)?;
         host.has_password = true;
     } else if request.password.as_ref().is_some() {
         // 显式传空串表示清除密码。
-        let _ = state.secrets.delete(&keyring::password_account(&host.id));
+        let _ = secrets.delete(&keyring::password_account(&host.id));
         host.has_password = false;
     }
 
     // 私钥口令
     if let Some(pp) = request.passphrase.as_ref().filter(|p| !p.is_empty()) {
-        state
-            .secrets
-            .set(&keyring::passphrase_account(&host.id), pp)?;
+        secrets.set(&keyring::passphrase_account(&host.id), pp)?;
         host.has_passphrase = true;
     } else if request.passphrase.as_ref().is_some() {
-        let _ = state.secrets.delete(&keyring::passphrase_account(&host.id));
+        let _ = secrets.delete(&keyring::passphrase_account(&host.id));
         host.has_passphrase = false;
     }
 
-    let (hosts, groups) = state.hosts.upsert(&host)?;
-    Ok(to_list(hosts, groups))
+    let (saved, groups) = hosts.upsert(&host)?;
+    Ok(to_list(saved, groups))
 }
 
 /// 删除主机，同时清理凭据库条目。
@@ -174,4 +186,160 @@ pub(crate) fn load_password(store: &SecretStore, host_id: &str) -> AppResult<Opt
 /// 读取某主机保存的私钥口令。
 pub(crate) fn load_passphrase(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {
     store.get(&keyring::passphrase_account(host_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::secrets::SecretBackend;
+    use crate::types::AuthType;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ssh7-host-save-{tag}-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 建一套不碰系统钥匙串的存储（本地加密文件）。
+    fn stores(tag: &str) -> (HostsStore, SecretStore, std::path::PathBuf) {
+        let dir = temp_dir(tag);
+        let hosts = HostsStore::new(&dir);
+        let secrets = SecretStore::new(&dir);
+        // 明确切到本地加密库 —— 测试不该去动用户的系统钥匙串。
+        secrets
+            .set_backend(SecretBackend::Vault, &[])
+            .expect("切到本地加密库");
+        (hosts, secrets, dir)
+    }
+
+    fn dto(id: &str) -> SavedHostDto {
+        SavedHostDto {
+            id: id.to_string(),
+            label: "测试机".into(),
+            group: None,
+            host: "10.0.0.1".into(),
+            port: 22,
+            username: "root".into(),
+            auth_type: AuthType::Password,
+            private_key_path: None,
+            has_password: false,
+            has_passphrase: false,
+        }
+    }
+
+    /// 「仅保存」的新建路径：前端不生成 id，后端分配。
+    #[test]
+    fn empty_id_gets_a_generated_one() {
+        let (hosts, secrets, dir) = stores("new-id");
+        let list = save_host(
+            &hosts,
+            &secrets,
+            HostSaveRequest {
+                host: dto(""),
+                password: Some("pw".into()),
+                passphrase: None,
+            },
+        )
+        .expect("保存失败");
+
+        let saved = &list.hosts[0];
+        assert!(!saved.id.is_empty(), "空 id 必须由后端分配");
+        assert!(
+            uuid::Uuid::parse_str(&saved.id).is_ok(),
+            "分配的 id 应该是 UUID：{}",
+            saved.id
+        );
+        // 列表里还拿不到明文密码。
+        assert!(saved.has_password);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 已有的 id 不被覆盖 —— 否则「编辑」会变成「新建」。
+    #[test]
+    fn existing_id_is_kept() {
+        let (hosts, secrets, dir) = stores("keep-id");
+        let list = save_host(
+            &hosts,
+            &secrets,
+            HostSaveRequest {
+                host: dto("fixed-id"),
+                password: None,
+                passphrase: None,
+            },
+        )
+        .expect("保存失败");
+        assert_eq!(list.hosts[0].id, "fixed-id");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 秘密进凭据库，`hosts.json` 里一个字都不能有（缺陷 #1）。
+    #[test]
+    fn password_never_reaches_hosts_json() {
+        let (hosts, secrets, dir) = stores("secret");
+        let list = save_host(
+            &hosts,
+            &secrets,
+            HostSaveRequest {
+                host: dto(""),
+                password: Some("hunter2-should-not-leak".into()),
+                passphrase: None,
+            },
+        )
+        .expect("保存失败");
+
+        let raw = std::fs::read_to_string(dir.join("hosts.json")).expect("读 hosts.json");
+        assert!(
+            !raw.contains("hunter2-should-not-leak"),
+            "hosts.json 里不该出现明文密码：{raw}"
+        );
+        assert!(raw.contains("hasPassword"), "只该留下「有没有」的标记");
+
+        // 凭据库里能读回来。
+        let id = &list.hosts[0].id;
+        let stored = secrets
+            .get(&keyring::password_account(id))
+            .expect("读凭据")
+            .expect("凭据库里应该有密码");
+        assert_eq!(stored, "hunter2-should-not-leak");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 密码留空 = 保持原来那个，不是清除（编辑主机时不回显密码）。
+    #[test]
+    fn omitting_password_keeps_the_stored_one() {
+        let (hosts, secrets, dir) = stores("keep-pw");
+        let first = save_host(
+            &hosts,
+            &secrets,
+            HostSaveRequest {
+                host: dto("fixed-id"),
+                password: Some("keep-me".into()),
+                passphrase: None,
+            },
+        )
+        .expect("首次保存失败");
+
+        // 第二次不传密码 —— 应该原样保留。
+        let mut edited = dto("fixed-id");
+        edited.has_password = first.hosts[0].has_password;
+        let list = save_host(
+            &hosts,
+            &secrets,
+            HostSaveRequest {
+                host: edited,
+                password: None,
+                passphrase: None,
+            },
+        )
+        .expect("二次保存失败");
+
+        assert!(list.hosts[0].has_password, "标记应该还在");
+        let stored = secrets
+            .get(&keyring::password_account("fixed-id"))
+            .expect("读凭据")
+            .expect("密码不该被清掉");
+        assert_eq!(stored, "keep-me");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

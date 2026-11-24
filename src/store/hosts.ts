@@ -9,7 +9,8 @@ interface HostsStore {
   groups: string[]
   loaded: boolean
   load: () => Promise<void>
-  save: (host: SavedHost) => Promise<void>
+  /** 新增或更新主机。秘密（若有）交给凭据库，`hosts.json` 只留标记。 */
+  save: (host: SavedHost, secret?: { password?: string; passphrase?: string }) => Promise<void>
   remove: (id: string) => Promise<void>
   /** 新建分组（可以是空分组）。 */
   createGroup: (name: string) => Promise<void>
@@ -33,8 +34,8 @@ export const useHosts = create<HostsStore>((set) => ({
     set({ hosts, groups, loaded: true })
   },
 
-  save: async (host) => {
-    const { hosts, groups } = await hostApi.save(host)
+  save: async (host, secret) => {
+    const { hosts, groups } = await hostApi.save(host, secret)
     set({ hosts, groups })
   },
 

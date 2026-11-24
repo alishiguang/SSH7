@@ -92,6 +92,8 @@
               case 'host_save': {
                 var r = (args && args.request) || {}
                 var h = r.host || {}
+                // 空 id = 新机器，由后端分配 id（真实实现是 UUIDv7）
+                if (!h.id) h.id = 'mock-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
                 var idx = hosts.findIndex(function (x) {
                   return x.id === h.id
                 })

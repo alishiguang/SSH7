@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { events, sessionApi } from './api/bridge'
-import type { ConnectRequest, SavedHost } from './api/types'
+import type { ConnectRequest, HostSaveRequest, SavedHost } from './api/types'
 import ConnectDialog from './components/ConnectDialog'
 import ContextMenu, { type ContextMenuItem } from './components/ContextMenu'
 import EmptyState from './components/EmptyState'
@@ -37,6 +37,7 @@ export default function App() {
 
   const hosts = useHosts((s) => s.hosts)
   const loadHosts = useHosts((s) => s.load)
+  const saveHost = useHosts((s) => s.save)
   const removeHost = useHosts((s) => s.remove)
 
   const filePanelOpen = useUi((s) => s.filePanelOpen)
@@ -219,6 +220,21 @@ export default function App() {
       }
     },
     [beginSession, patchSession, replaceSession, removeSession, push, reportError, loadHosts],
+  )
+
+  /** 「仅保存」：只写进主机列表，不建立连接。 */
+  const handleSaveOnly = useCallback(
+    async (payload: HostSaveRequest) => {
+      // 秘密交给凭据库，hosts.json 里只留标记 —— 前端不落盘明文。
+      await saveHost(payload.host, {
+        password: payload.password,
+        passphrase: payload.passphrase,
+      })
+      setDialogOpen(false)
+      setEditingHost(null)
+      push({ kind: 'success', title: '已保存', message: payload.host.label })
+    },
+    [saveHost, push],
   )
 
   /** 强制为某台已保存主机新开一个会话。 */
@@ -496,6 +512,7 @@ export default function App() {
           key={editingHost?.id ?? 'new'}
           editHost={editingHost}
           onSubmit={handleConnect}
+          onSaveOnly={handleSaveOnly}
           onClose={() => {
             setDialogOpen(false)
             setEditingHost(null)

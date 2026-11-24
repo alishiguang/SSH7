@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { sessionApi } from '../api/bridge'
-import type { AuthType, ConnectRequest, SavedHost, TestResult } from '../api/types'
+import type { AuthType, ConnectRequest, HostSaveRequest, SavedHost, TestResult } from '../api/types'
 import { useHosts } from '../store/hosts'
 import { useUi } from '../store/ui'
 
@@ -11,6 +11,8 @@ interface Props {
   /** 非空表示编辑模式 */
   editHost?: SavedHost | null
   onSubmit: (req: ConnectRequest) => Promise<void>
+  /** 「仅保存」：只写进主机列表，不建立连接。 */
+  onSaveOnly: (payload: HostSaveRequest) => Promise<void>
   onClose: () => void
 }
 
@@ -40,10 +42,11 @@ const EMPTY: FormState = {
   save: true,
 }
 
-export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
+export default function ConnectDialog({ editHost, onSubmit, onSaveOnly, onClose }: Props) {
   const isEdit = !!editHost
   const [testing, setTesting] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -175,6 +178,48 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setConnecting(false)
+    }
+  }
+
+  /**
+   * 「仅保存」要写进主机列表的内容。
+   *
+   * 秘密单独交给凭据库，`hosts.json` 里只留「有没有」的标记。
+   * 密码框不回显 —— 留空表示**保持原来那个**，不是清除。
+   */
+  const buildSavePayload = (): HostSaveRequest => {
+    const req = buildRequest()
+    const password = req.password || undefined
+    const passphrase = req.passphrase || undefined
+    return {
+      host: {
+        // 空 id 表示新机器，id 由后端分配。
+        id: editHost?.id ?? '',
+        label: req.label ?? '',
+        group: req.group,
+        host: req.host,
+        port: req.port ?? 22,
+        username: req.username,
+        authType: req.authType,
+        privateKeyPath: req.privateKeyPath,
+        hasPassword: password ? true : (editHost?.hasPassword ?? false),
+        hasPassphrase: passphrase ? true : (editHost?.hasPassphrase ?? false),
+      },
+      password,
+      passphrase,
+    }
+  }
+
+  /** 只保存，不连。 */
+  const handleSaveOnly = async () => {
+    if (!validate()) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSaveOnly(buildSavePayload())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setSaving(false)
     }
   }
 
@@ -368,7 +413,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
               onChange={(e) => set('save', e.target.checked)}
             />
             <span className="checkbox-box" />
-            <span>保存到主机列表（密码加密后存在本机）</span>
+            <span>连接时一并保存到主机列表（密码加密后存在本机）</span>
           </label>
 
           <div className="modal-actions">
@@ -376,11 +421,23 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
               type="button"
               className="btn btn-ghost"
               onClick={handleTest}
-              disabled={testing || connecting}
+              disabled={testing || connecting || saving}
             >
               {testing ? '测试中…' : '测试连接'}
             </button>
-            <button type="submit" className="btn btn-primary" disabled={connecting || testing}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleSaveOnly}
+              disabled={testing || connecting || saving}
+            >
+              {saving ? '保存中…' : isEdit ? '保存' : '仅保存'}
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={connecting || testing || saving}
+            >
               {connecting ? '连接中…' : isEdit ? '保存并连接' : '连接'}
             </button>
           </div>
