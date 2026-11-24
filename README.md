@@ -4,6 +4,8 @@
 
 <div align="center">
 
+<img src="icon-source.png" width="128" alt="SSH7" />
+
 **Ink 黑 · Cream 米白 · 信号红 #F70121**
 
 多会话终端 · SFTP 文件管理 · 拖拽传输 · 密码存系统钥匙串
