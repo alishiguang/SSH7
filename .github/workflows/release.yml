@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS · arm64 + x64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build universal bundles
+        run: |
+          npm run tauri build -- --target universal-apple-darwin
+          npm run tauri build -- --target aarch64-apple-darwin
+          npm run tauri build -- --target x86_64-apple-darwin
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist-release
+          find src-tauri/target -path '*release/bundle/dmg/*.dmg' -exec cp {} dist-release/ \;
+          ls -lh dist-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssh7-dmg
+          path: dist-release/*.dmg
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/*.dmg
+          generate_release_notes: true
+          draft: false
