@@ -1,6 +1,6 @@
 [package]
 name = "ssh7"
-version = "1.2.5"
+version = "1.2.6"
 description = "SSH7 — 简洁酷炫的跨平台 SSH 客户端"
 authors = ["alishiguang"]
 edition = "2021"
