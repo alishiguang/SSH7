@@ -261,11 +261,14 @@ pub async fn connect(
         let detect_handle = handle.clone();
         let hook_writer = writer.clone();
         tokio::spawn(async move {
-            let kind = {
+            // 探测整体兜一个超时：远端不配合时不能一直占着连接句柄。
+            let kind = tokio::time::timeout(Duration::from_secs(5), async {
                 let guard = detect_handle.lock().await;
                 detect_shell(&guard).await
-            };
-            // 认不出来也照样要把回显还回去 —— 是我们关的。
+            })
+            .await
+            .unwrap_or(None);
+            // 认不出来、探测超时 —— 都照样要把回显还回去：回显是我们关的。
             let command = crate::ssh::tracker::install_command(
                 kind.unwrap_or(crate::ssh::tracker::ShellKind::Unknown),
             );
