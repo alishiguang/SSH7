@@ -52,10 +52,12 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('mousedown', onPointerDown)
-    window.addEventListener('keydown', onKey)
+    // 捕获阶段监听：终端拿到焦点后，xterm 会吞掉 keydown 的冒泡，
+    // 冒泡监听的话 Esc 送不到这里，菜单就关不掉。
+    window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('mousedown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [onClose])
 

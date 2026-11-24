@@ -149,3 +149,23 @@ pub async fn sftp_pick_directory(app: tauri::AppHandle) -> AppResult<Option<Stri
         .and_then(|f| f.into_path().ok())
         .map(|p| p.to_string_lossy().into_owned()))
 }
+
+/// 弹出本地文件夹选择框，用于整体上传一个目录。
+#[tauri::command]
+pub async fn sftp_pick_upload_folder(app: tauri::AppHandle) -> AppResult<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("选择要上传的文件夹")
+        .pick_folder(move |res| {
+            let _ = tx.send(res);
+        });
+
+    let picked = rx
+        .await
+        .map_err(|_| AppError::Internal("文件夹选择被取消".into()))?;
+
+    Ok(picked
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned()))
+}

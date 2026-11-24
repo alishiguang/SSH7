@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { events, sessionApi, sftpApi } from '../api/bridge'
 import { useDropZone } from '../hooks/useDropZone'
+import { useSettings } from '../store/settings'
 import { useTransfers } from '../store/transfers'
 
 import { Icon } from './Icons'
@@ -49,11 +50,14 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
   const cwdRef = useRef<string | undefined>(cwd)
 
   const [uploading, setUploading] = useState(false)
-  const { ref: zoneRef, isOver, paths } = useDropZone<HTMLDivElement>()
+  const { ref: zoneRef, isOver, dropped } = useDropZone<HTMLDivElement>()
 
   const transfers = useTransfers((s) => s.transfers)
   const startTransfer = useTransfers((s) => s.start)
   const finishTransfer = useTransfers((s) => s.finish)
+
+  // 终端字号是显示偏好，可以在会话存续期间随时改。
+  const fontSize = useSettings((s) => s.terminalFontSize)
 
   cwdRef.current = cwd
 
@@ -66,7 +70,9 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
       theme: THEME,
       fontFamily:
         '"Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace',
-      fontSize: 12.5,
+      // 这里读一次当前字号；后续调整由下面的 effect 负责，
+      // 不把 fontSize 放进依赖里，避免重建终端丢掉回滚缓冲。
+      fontSize: useSettings.getState().terminalFontSize,
       lineHeight: 1.45,
       letterSpacing: 0.2,
       cursorBlink: true,
@@ -145,6 +151,24 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
     }
   }, [sessionId])
 
+  /* ── 字号变化：改 xterm 字号并重新 fit ──────────
+     字号变了列数与行数也会跟着变，必须重新 fit 并把新尺寸同步给远端 PTY，
+     否则远端程序会按旧的行列数排版。                          */
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    // 字号没变就不动：终端刚创建时渲染器还没就绪，
+    // 这时候再 fit 一次会踩到 xterm 的 dimensions 空引用。
+    if (term.options.fontSize === fontSize) return
+    term.options.fontSize = fontSize
+    try {
+      fitRef.current?.fit()
+      void sessionApi.resize(sessionId, term.cols, term.rows)
+    } catch {
+      /* 会话可能已关闭 */
+    }
+  }, [fontSize, sessionId])
+
   /* ── 标签激活时重新 fit + 聚焦 ─────────────── */
   useEffect(() => {
     if (!active) return
@@ -162,20 +186,21 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
     return () => window.clearTimeout(t)
   }, [active, sessionId])
 
-  /* ── 拖拽上传 ───────────────────────────────── */
-  const uploadPaths = paths.length > 0 ? paths : []
-  const consumedRef = useRef<string>('')
+  /* ── 拖拽上传 ─────────────────────────────────
+     只在「松手」时触发：拖动过程中只是显示提示层。 */
+  const consumedRef = useRef<number>(-1)
 
   useEffect(() => {
-    if (!isOver || uploadPaths.length === 0) return
-    // 同一个拖放动作只消费一次
-    const key = uploadPaths.join('|')
-    if (consumedRef.current === key) return
-    consumedRef.current = key
+    if (!dropped || dropped.paths.length === 0) return
+    // 同一次拖放只消费一次。
+    if (consumedRef.current === dropped.seq) return
+    consumedRef.current = dropped.seq
+
     void (async () => {
       setUploading(true)
+      // 没有 OSC 7 目录信息时退回远端用户主目录（`.`）。
       const target = cwdRef.current && cwdRef.current !== '~' ? cwdRef.current : '.'
-      for (const localPath of uploadPaths) {
+      for (const localPath of dropped.paths) {
         const name = localPath.split(/[\\/]/).pop() || localPath
         const transferId = crypto.randomUUID()
         startTransfer({
@@ -187,6 +212,7 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
           direction: 'upload',
         })
         try {
+          // 后端会自动判断是文件还是目录，目录会递归上传。
           await sftpApi.upload(sessionId, localPath, target, transferId)
           finishTransfer(transferId)
           termRef.current?.write(
@@ -201,9 +227,8 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
         }
       }
       setUploading(false)
-      consumedRef.current = ''
     })()
-  }, [isOver, uploadPaths, sessionId, startTransfer, finishTransfer])
+  }, [dropped, sessionId, startTransfer, finishTransfer])
 
   const sessionTransfers = transfers.filter((t) => t.sessionId === sessionId)
 

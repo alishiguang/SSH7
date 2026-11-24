@@ -40,11 +40,13 @@
     Consolas, monospace;
 
   /* ── 排版 ─────────────────────────────── */
+  /* --ui-scale 由「设置」面板写入根元素，控制整个界面的字号缩放 */
+  --ui-scale: 1;
   --track-label: 0.14em; /* 元数据标签字距 */
-  --fs-meta: 10px;
-  --fs-label: 11px;
-  --fs-body: 13px;
-  --fs-title: 15px;
+  --fs-meta: calc(10px * var(--ui-scale));
+  --fs-label: calc(11px * var(--ui-scale));
+  --fs-body: calc(13px * var(--ui-scale));
+  --fs-title: calc(15px * var(--ui-scale));
 
   /* ── 尺寸 ─────────────────────────────── */
   --sidebar-w: 232px;

@@ -6,13 +6,20 @@ import ConnectDialog from './components/ConnectDialog'
 import ContextMenu, { type ContextMenuItem } from './components/ContextMenu'
 import EmptyState from './components/EmptyState'
 import FilePanel from './components/FilePanel'
+import { Icon } from './components/Icons'
 import SessionTabs from './components/SessionTabs'
+import SettingsPanel from './components/SettingsPanel'
 import Sidebar from './components/Sidebar'
 import TerminalView from './components/TerminalView'
 import Toasts from './components/Toasts'
 import { useDrop } from './store/drop'
 import { useHosts } from './store/hosts'
 import { useSessions } from './store/sessions'
+import {
+  TERMINAL_FONT_DEFAULT,
+  applyUiScale,
+  useSettings,
+} from './store/settings'
 import { useTransfers } from './store/transfers'
 import { useUi } from './store/ui'
 
@@ -35,6 +42,7 @@ export default function App() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<SavedHost | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const initDrop = useDrop((s) => s.init)
 
@@ -43,6 +51,41 @@ export default function App() {
     void loadHosts().catch((e) => reportError('读取主机列表失败', e as never))
     void initDrop()
   }, [loadHosts, initDrop, reportError])
+
+  /* ── 界面缩放：写入根元素，供 CSS 令牌计算字号 ── */
+  const uiScale = useSettings((s) => s.uiScale)
+  useEffect(() => {
+    applyUiScale(uiScale)
+  }, [uiScale])
+
+  /* ── 快捷键：Ctrl +/-/0 调整终端字号 ────────── */
+  const nudgeTerminalFontSize = useSettings((s) => s.nudgeTerminalFontSize)
+  const setTerminalFontSize = useSettings((s) => s.setTerminalFontSize)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 只用 Ctrl，避免和 macOS 的 Cmd+ 缩放打架。
+      if (!e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (
+        t &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      ) {
+        return
+      }
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault()
+        nudgeTerminalFontSize(1)
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault()
+        nudgeTerminalFontSize(-1)
+      } else if (e.key === '0') {
+        e.preventDefault()
+        setTerminalFontSize(TERMINAL_FONT_DEFAULT)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [nudgeTerminalFontSize, setTerminalFontSize])
 
   /* ── 全局事件监听（只注册一次）──────────────── */
   useEffect(() => {
@@ -212,12 +255,6 @@ export default function App() {
         onSelect: () => void handleCloneSession(s.id),
       },
       {
-        id: 'focus',
-        label: '切换到该会话',
-        icon: 'terminal',
-        onSelect: () => setActive(s.id),
-      },
-      {
         id: 'disconnect',
         label: '断开连接',
         icon: 'refresh',
@@ -234,7 +271,7 @@ export default function App() {
         onSelect: () => removeSession(s.id),
       },
     ]
-  }, [menu, sessions, handleCloneSession, setActive, patchSession, removeSession])
+  }, [menu, sessions, handleCloneSession, patchSession, removeSession])
 
   const activeSession = sessions.find((s) => s.id === activeId)
 
@@ -244,6 +281,14 @@ export default function App() {
         <span className="titlebar-brand display" data-tauri-drag-region>
           SSH7
         </span>
+        <button
+          className="titlebar-btn"
+          title="设置"
+          aria-label="设置"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <Icon name="settings" size={13} />
+        </button>
       </div>
 
       <div className="app-body">
@@ -351,6 +396,10 @@ export default function App() {
           items={menuItems}
           onClose={() => setMenu(null)}
         />
+      )}
+
+      {settingsOpen && (
+        <SettingsPanel onClose={() => setSettingsOpen(false)} />
       )}
 
       <Toasts />

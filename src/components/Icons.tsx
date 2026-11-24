@@ -7,6 +7,7 @@
 
 export type IconName =
   | 'plus'
+  | 'minus'
   | 'folder'
   | 'folder-open'
   | 'file'
@@ -30,9 +31,11 @@ export type IconName =
   | 'panel'
   | 'arrow-up'
   | 'dots'
+  | 'settings'
 
 const PATHS: Record<IconName, JSX.Element> = {
   plus: <path d="M8 3v10M3 8h10" />,
+  minus: <path d="M3 8h10" />,
   folder: <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2h4.5A1.5 1.5 0 0 1 14 6.5v5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" />,
   'folder-open': (
     <>
@@ -131,6 +134,13 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="3.5" cy="8" r=".6" fill="currentColor" stroke="none" />
       <circle cx="8" cy="8" r=".6" fill="currentColor" stroke="none" />
       <circle cx="12.5" cy="8" r=".6" fill="currentColor" stroke="none" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M2.5 4.5h11M2.5 11.5h11" />
+      <circle cx="5.5" cy="4.5" r="2" />
+      <circle cx="10.5" cy="11.5" r="2" />
     </>
   ),
 }

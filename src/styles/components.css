@@ -17,6 +17,7 @@
 .titlebar {
   height: var(--titlebar-h);
   flex-shrink: 0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,7 +26,7 @@
   -webkit-app-region: drag;
 }
 .titlebar-brand {
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale));
   letter-spacing: 0.34em;
   color: var(--cream-3);
 }
@@ -83,7 +84,7 @@
 }
 .stage-error-title {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: calc(20px * var(--ui-scale));
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--red);
@@ -129,7 +130,7 @@
   border-bottom: 1px solid var(--line);
 }
 .brand-mark {
-  font-size: 17px;
+  font-size: calc(17px * var(--ui-scale));
   letter-spacing: 0.1em;
   color: var(--cream);
 }
@@ -232,7 +233,7 @@
 .session-row-cwd,
 .host-row-meta {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ui-scale));
   color: var(--cream-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,7 +313,7 @@
   border-right: 1px solid var(--line);
   border-bottom: 2px solid transparent;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   color: var(--cream-3);
   white-space: nowrap;
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
@@ -330,7 +331,7 @@
   color: inherit;
 }
 .tab-cwd {
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ui-scale));
   color: var(--cream-3);
   max-width: 150px;
   overflow: hidden;
@@ -415,7 +416,7 @@
 }
 .btn-xs {
   padding: 4px 9px;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ui-scale));
   --cut: 6px;
 }
 
@@ -471,7 +472,7 @@
   display: block;
   margin-top: 5px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ui-scale));
   color: var(--green);
 }
 
@@ -494,10 +495,10 @@
 }
 .input-mono {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale));
 }
 .input-path {
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   padding: 5px 8px;
 }
 
@@ -632,13 +633,13 @@
 .callout-title {
   color: inherit;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   line-height: 1.5;
 }
 .callout-hint {
   margin-top: 4px;
   color: var(--cream-2);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   line-height: 1.55;
 }
 
@@ -717,7 +718,7 @@
 
 .empty-lead {
   max-width: 520px;
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale));
   line-height: 1.75;
   color: var(--cream-2);
   margin-bottom: 30px;
@@ -756,7 +757,7 @@
 .empty-meta em {
   color: var(--red);
   font-style: normal;
-  font-size: 7px;
+  font-size: calc(7px * var(--ui-scale));
 }
 
 /* ── 跑马灯 ───────────────────────────────── */
@@ -787,7 +788,7 @@
   gap: 20px;
   padding-right: 20px;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   letter-spacing: 0.09em;
   color: #fff;
   white-space: nowrap;
@@ -795,7 +796,7 @@
 .ticker-item em {
   font-style: normal;
   opacity: 0.5;
-  font-size: 8px;
+  font-size: calc(8px * var(--ui-scale));
 }
 
 /* ── 终端 ─────────────────────────────────── */
@@ -855,7 +856,7 @@
 }
 .drop-overlay-title {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: calc(20px * var(--ui-scale));
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -906,7 +907,7 @@
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ui-scale));
   color: var(--cream);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -915,7 +916,7 @@
 .transfer-pct {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-scale));
   color: var(--red);
   font-variant-numeric: tabular-nums;
 }
@@ -1049,7 +1050,7 @@
 .file-row-name {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale));
   color: var(--cream);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1058,7 +1059,7 @@
 .file-row-size {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-scale));
   color: var(--cream-2);
   font-variant-numeric: tabular-nums;
 }
@@ -1066,7 +1067,7 @@
   flex-shrink: 0;
   width: 92px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ui-scale));
   color: var(--cream-3);
   font-variant-numeric: tabular-nums;
 }
@@ -1109,7 +1110,7 @@
   padding: 7px 10px;
   color: var(--cream-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   letter-spacing: 0.04em;
   text-align: left;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -1175,7 +1176,7 @@
 }
 .toast-title {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--cream);
@@ -1183,14 +1184,14 @@
 }
 .toast-message {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--ui-scale));
   color: var(--cream-2);
   line-height: 1.5;
   word-break: break-word;
 }
 .toast-hint {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-scale));
   color: var(--cream-3);
   line-height: 1.55;
 }
@@ -1214,4 +1215,135 @@
   border-top-color: var(--red);
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
+}
+
+/* ── 标题栏按钮 ───────────────────────────── */
+
+.titlebar-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  color: var(--cream-3);
+  border: 1px solid transparent;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  /* 标题栏整体是拖拽区，按钮必须排除，否则点不动 */
+  -webkit-app-region: no-drag;
+}
+.titlebar-btn:hover {
+  color: var(--cream);
+  border-color: var(--line);
+}
+
+/* ── 设置面板 ─────────────────────────────── */
+
+.settings-panel {
+  position: fixed;
+  top: calc(var(--titlebar-h) + 6px);
+  right: 10px;
+  z-index: 320;
+  width: 274px;
+  padding: 12px 13px 13px;
+  background: var(--ink-800);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.62);
+  animation: fade-up 0.12s var(--ease);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--cream-2);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepper-value {
+  min-width: 64px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--cream);
+}
+
+.stepper .icon-btn:disabled {
+  color: var(--line-strong);
+  cursor: default;
+}
+.stepper .icon-btn:disabled:hover {
+  background: transparent;
+  color: var(--line-strong);
+}
+
+.settings-reset {
+  width: 100%;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.settings-reset-hint {
+  color: var(--cream-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.04em;
+}
+
+.settings-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--cream-2);
+}
+
+.settings-shortcut kbd {
+  padding: 1px 5px;
+  color: var(--cream);
+  background: var(--ink-750);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: calc(9.5px * var(--ui-scale));
+}
+
+.settings-foot {
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--cream-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
 }

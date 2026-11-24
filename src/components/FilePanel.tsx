@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { sftpApi } from '../api/bridge'
 import type { RemoteFile } from '../api/types'
@@ -54,8 +54,8 @@ export default function FilePanel({ sessionId, onClose }: Props) {
   const startTransfer = useTransfers((s) => s.start)
   const finishTransfer = useTransfers((s) => s.finish)
 
-  const { ref: zoneRef, isOver, paths } = useDropZone<HTMLDivElement>()
-  const consumedRef = useMemo(() => ({ current: '' }), [])
+  const { ref: zoneRef, isOver, dropped } = useDropZone<HTMLDivElement>()
+  const consumedRef = useRef<number>(-1)
 
   /* ── 列举目录 ───────────────────────────────── */
   const load = useCallback(
@@ -110,6 +110,7 @@ export default function FilePanel({ sessionId, onClose }: Props) {
           direction: 'upload',
         })
         try {
+          // 后端会自动判断是文件还是目录，目录会递归上传。
           await sftpApi.upload(sessionId, localPath, targetDir, transferId)
           finishTransfer(transferId)
         } catch (e) {
@@ -132,17 +133,23 @@ export default function FilePanel({ sessionId, onClose }: Props) {
     }
   }
 
-  // 拖放到文件面板
+  /** 选择一个本地文件夹整体上传（目录会递归上传）。 */
+  const handlePickFolder = async () => {
+    try {
+      const picked = await sftpApi.pickUploadFolder()
+      if (picked) await upload([picked], cwd)
+    } catch (e) {
+      reportError('选择文件夹失败', e as never)
+    }
+  }
+
+  // 拖放到文件面板：只在松手时上传。
   useEffect(() => {
-    if (!isOver || paths.length === 0) return
-    const key = paths.join('|')
-    if (consumedRef.current === key) return
-    consumedRef.current = key
-    void upload(paths, cwd)
-    window.setTimeout(() => {
-      consumedRef.current = ''
-    }, 0)
-  }, [isOver, paths, cwd, upload])
+    if (!dropped || dropped.paths.length === 0) return
+    if (consumedRef.current === dropped.seq) return
+    consumedRef.current = dropped.seq
+    void upload(dropped.paths, cwd)
+  }, [dropped, cwd, upload])
 
   /* ── 下载 ───────────────────────────────────── */
   const handleDownload = async (file: RemoteFile) => {
@@ -213,6 +220,9 @@ export default function FilePanel({ sessionId, onClose }: Props) {
         <div className="file-panel-head-actions">
           <button className="icon-btn" onClick={handlePickFiles} title="上传文件">
             <Icon name="upload" size={13} />
+          </button>
+          <button className="icon-btn" onClick={handlePickFolder} title="上传文件夹">
+            <Icon name="folder" size={13} />
           </button>
           <button className="icon-btn" onClick={handleMkdir} title="新建目录">
             <Icon name="folder-open" size={13} />

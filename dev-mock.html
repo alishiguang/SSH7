@@ -98,6 +98,11 @@
                     modifiedAt: 1750000000,
                   },
                 ]
+              case 'sftp_pick_files':
+                return []
+              case 'sftp_pick_directory':
+              case 'sftp_pick_upload_folder':
+                return null
               default:
                 return null
             }
@@ -107,6 +112,11 @@
             window['_' + id] = cb
             return id
           },
+          unregisterListener: async function () {},
+        }
+        // @tauri-apps/api 的事件模块用的是这个内部对象
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+          unregisterListener: async function () {},
         }
       })()
     </script>

@@ -99,6 +99,7 @@ export const sftpApi = {
     call<void>('sftp_mkdir', { sessionId, remotePath }),
   pickFiles: () => call<string[]>('sftp_pick_files'),
   pickDirectory: () => call<string | null>('sftp_pick_directory'),
+  pickUploadFolder: () => call<string | null>('sftp_pick_upload_folder'),
 }
 
 /* ── 事件 ───────────────────────────────────────────── */

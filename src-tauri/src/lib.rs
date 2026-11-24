@@ -60,6 +60,7 @@ pub fn run() {
             commands::sftp::sftp_mkdir,
             commands::sftp::sftp_pick_files,
             commands::sftp::sftp_pick_directory,
+            commands::sftp::sftp_pick_upload_folder,
         ])
         .run(tauri::generate_context!())
         .expect("启动 SSH7 失败");
