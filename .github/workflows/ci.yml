@@ -49,6 +49,16 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # `tauri::generate_context!()` 在编译期就会检查 frontendDist（../dist）是否存在，
+      # 因此 Rust 相关步骤之前必须先构建前端产物。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
       # Tauri v2 在 Linux 上需要这些系统库；
       # russh 使用 ring 后端，因此不需要 cmake。
       - name: Install Tauri system dependencies
