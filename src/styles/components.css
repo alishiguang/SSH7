@@ -264,23 +264,12 @@
   font-size: calc(11px * var(--ui-scale));
   outline: none;
 }
-/* 侧边栏底部的「新建分组」 */
-.sidebar-group-add {
-  padding: 8px 12px 4px;
-}
-.sidebar-group-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--cream-3);
-  cursor: pointer;
-  transition: color var(--dur) var(--ease);
-}
-.sidebar-group-add-btn:hover {
-  color: var(--red);
+/* 侧边栏工具栏里「新建分组」就地变成的输入框 */
+.tool-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px;
+  text-transform: none;
 }
 
 .host-row {

@@ -387,6 +387,32 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-tools">
+        {groupEdit?.mode === 'create' ? (
+          <input
+            ref={groupInputRef}
+            className="group-rename tool-input"
+            value={groupDraft}
+            placeholder="分组名"
+            onChange={(e) => setGroupDraft(e.target.value)}
+            onBlur={commitGroupEdit}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitGroupEdit()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                committingRef.current = true
+                setGroupEdit(null)
+              }
+            }}
+          />
+        ) : (
+          <button className="tool-btn" onClick={startCreateGroup} title="新建一个分组">
+            <Icon name="plus" size={12} />
+            <span>分组</span>
+          </button>
+        )}
         <button className="tool-btn tool-btn-primary" onClick={onConnect}>
           <Icon name="plus" size={12} />
           <span>连接</span>
@@ -513,40 +539,6 @@ export default function Sidebar({
             )
           })
         )}
-
-        {/* 新建分组 */}
-        <div className="sidebar-group-add">
-          {groupEdit?.mode === 'create' ? (
-            <input
-              ref={groupInputRef}
-              className="group-rename"
-              value={groupDraft}
-              placeholder="分组名"
-              onChange={(e) => setGroupDraft(e.target.value)}
-              onBlur={commitGroupEdit}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  commitGroupEdit()
-                } else if (e.key === 'Escape') {
-                  e.preventDefault()
-                  committingRef.current = true
-                  setGroupEdit(null)
-                }
-              }}
-            />
-          ) : (
-            <button
-              className="meta sidebar-group-add-btn"
-              onClick={startCreateGroup}
-              title="新建一个分组"
-            >
-              <Icon name="plus" size={11} />
-              新建分组
-            </button>
-          )}
-        </div>
       </div>
 
       <div className="sidebar-foot">
