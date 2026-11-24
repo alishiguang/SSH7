@@ -108,7 +108,8 @@ export const sessionApi = {
   /** 前端挂载终端后调用，补发 Rust 侧缓存的首批输出。 */
   attach: (sessionId: string) => call<void>('session_attach', { sessionId }),
   /** 以现有会话为模板克隆一个新会话（凭据在 Rust 侧复用）。 */
-  clone: (sessionId: string) => call<SessionInfo>('session_clone', { sessionId }),
+  clone: (sessionId: string, label?: string) =>
+    call<SessionInfo>('session_clone', { sessionId, label: label ?? null }),
   disconnect: (sessionId: string) => call<void>('session_disconnect', { sessionId }),
 }
 

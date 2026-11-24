@@ -87,6 +87,44 @@ describe('useSessions.remove', () => {
   })
 })
 
+describe('useSessions.move', () => {
+  beforeEach(() => {
+    useSessions.getState().begin(base)
+    useSessions.getState().begin({ ...base, id: 's2' })
+    useSessions.getState().begin({ ...base, id: 's3' })
+  })
+
+  it('往后拖：拖到最后', () => {
+    useSessions.getState().move('s1', 2)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s2', 's3', 's1'])
+  })
+
+  it('往前拖：插到最前面', () => {
+    useSessions.getState().move('s3', 0)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s3', 's1', 's2'])
+  })
+
+  it('拖到中间', () => {
+    useSessions.getState().move('s1', 1)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s2', 's1', 's3'])
+  })
+
+  it('下标超出范围时夹到末尾', () => {
+    useSessions.getState().move('s1', 99)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s2', 's3', 's1'])
+  })
+
+  it('拖到自己原来的位置不动', () => {
+    useSessions.getState().move('s2', 1)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s1', 's2', 's3'])
+  })
+
+  it('不存在的会话不报错', () => {
+    useSessions.getState().move('nope', 0)
+    expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(['s1', 's2', 's3'])
+  })
+})
+
 describe('useSessions.setActive / active', () => {
   it('切换焦点会话', () => {
     useSessions.getState().begin(base)

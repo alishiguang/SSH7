@@ -27,6 +27,13 @@ interface SessionsStore {
   patch: (id: string, patch: Partial<SessionState>) => void
   /** 用真实会话替换占位会话（连接建立后调用）。 */
   replace: (oldId: string, next: SessionState) => void
+  /**
+   * 把会话挪到新位置（标签栏拖动排序）。
+   *
+   * `toIndex` 是**挪动之后**这个会话在标签栏里的最终下标。
+   * 超界会被夹到合法范围内，所以传 3 给三个标签也安全。
+   */
+  move: (id: string, toIndex: number) => void
   remove: (id: string) => void
   setActive: (id: string | null) => void
   active: () => SessionState | undefined
@@ -70,6 +77,19 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         // 别把用户已经切走的焦点抢回来。
         activeId: prev.activeId === oldId ? next.id : prev.activeId,
       }
+    }),
+
+  /** 拖动排序：把会话挪到 `toIndex` 这个最终位置。 */
+  move: (id, toIndex) =>
+    set((prev) => {
+      const from = prev.sessions.findIndex((s) => s.id === id)
+      if (from < 0) return prev
+      const sessions = [...prev.sessions]
+      const [item] = sessions.splice(from, 1)
+      // 先摘出来再插入，`toIndex` 就是它最终落在哪。
+      const idx = Math.max(0, Math.min(toIndex, sessions.length))
+      sessions.splice(idx, 0, item)
+      return { sessions }
     }),
 
   remove: (id) =>

@@ -42,6 +42,10 @@ export default function App() {
   const setFilePanel = useUi((s) => s.setFilePanel)
   const reportError = useUi((s) => s.reportError)
   const push = useUi((s) => s.push)
+  /* 正在改名的会话（标签栏双击或右键菜单触发）。
+     放在 store 里，终端才知道「这会儿别抢焦点」。 */
+  const renamingSession = useUi((s) => s.renamingSessionId)
+  const setRenamingSession = useUi((s) => s.setRenamingSession)
   const transfers = useTransfers((s) => s)
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -260,7 +264,9 @@ export default function App() {
   const handleCloneSession = useCallback(
     async (sessionId: string) => {
       try {
-        const info = await sessionApi.clone(sessionId)
+        // 沿用用户在标签栏里改过的名字
+        const label = useSessions.getState().sessions.find((s) => s.id === sessionId)?.label
+        const info = await sessionApi.clone(sessionId, label)
         beginSession({
           id: info.sessionId,
           label: info.label,
@@ -291,6 +297,12 @@ export default function App() {
     const s = sessions.find((x) => x.id === menu.sessionId)
     if (!s) return []
     return [
+      {
+        id: 'rename',
+        label: '重命名',
+        icon: 'edit',
+        onSelect: () => setRenamingSession(s.id),
+      },
       {
         id: 'clone',
         label: '克隆为新会话',
@@ -346,11 +358,19 @@ export default function App() {
             setEditingHost(h)
             setDialogOpen(true)
           }}
-          onSessionMenu={(sessionId, x, y) => setMenu({ sessionId, x, y })}
         />
 
         <main className="workspace">
-          <SessionTabs onSessionMenu={(sessionId, x, y) => setMenu({ sessionId, x, y })} />
+          <SessionTabs
+            onSessionMenu={(sessionId, x, y) => setMenu({ sessionId, x, y })}
+            onRenameStart={(sessionId) => setRenamingSession(sessionId)}
+            renamingId={renamingSession}
+            onRenameEnd={(sessionId, label) => {
+              setRenamingSession(null)
+              if (!label) return
+              patchSession(sessionId, { label })
+            }}
+          />
 
           <div className="stage">
             {sessions.length === 0 ? (

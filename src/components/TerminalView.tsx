@@ -8,6 +8,7 @@ import { events, sessionApi, sftpApi } from '../api/bridge'
 import { useDropZone } from '../hooks/useDropZone'
 import { useSettings } from '../store/settings'
 import { useTransfers } from '../store/transfers'
+import { useUi } from '../store/ui'
 
 import { Icon } from './Icons'
 
@@ -170,8 +171,12 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
   }, [fontSize, sessionId])
 
   /* ── 标签激活时重新 fit + 聚焦 ─────────────── */
+  /* 改���标签名的时候不能抢焦点：xterm 一聚焦，改名输入框就失焦，
+     用户打的字全跑到终端里去了。改名结束后再把焦点还回终端。 */
+  const renamingSessionId = useUi((s) => s.renamingSessionId)
   useEffect(() => {
     if (!active) return
+    if (renamingSessionId) return
     const t = window.setTimeout(() => {
       try {
         fitRef.current?.fit()
@@ -184,7 +189,7 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
       }
     }, 50)
     return () => window.clearTimeout(t)
-  }, [active, sessionId])
+  }, [active, sessionId, renamingSessionId])
 
   /* ── 拖拽上传 ─────────────────────────────────
      只在「松手」时触发：拖动过程中只是显示提示层。 */
