@@ -4688,6 +4688,7 @@ dependencies = [
  "dirs 6.0.0",
  "futures",
  "keyring",
+ "ring",
  "russh",
  "russh-sftp",
  "serde",

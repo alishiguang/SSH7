@@ -38,6 +38,8 @@ russh-sftp = "4"
 ssh-key = { version = "=0.7.0-rc.12", features = ["encryption"] }
 
 keyring = { version = "4", features = ["v1"] }
+# AES-256-GCM（本地加密凭据库用）。russh 已经带了 ring 0.17，这里直接复用，不额外编译。
+ring = "0.17"
 uuid = { version = "1", features = ["v7", "serde"] }
 thiserror = "2"
 dashmap = "6"

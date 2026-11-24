@@ -46,6 +46,8 @@ pub fn run() {
             commands::host::host_list,
             commands::host::host_save,
             commands::host::host_delete,
+            commands::credentials::credential_store_info,
+            commands::credentials::credential_store_set,
             commands::session::session_connect,
             commands::session::session_test,
             commands::session::session_write,

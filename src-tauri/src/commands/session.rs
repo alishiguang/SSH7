@@ -9,6 +9,7 @@ use crate::commands::AppState;
 use crate::error::{AppError, AppResult};
 use crate::ssh::auth::{load_private_key, Credential};
 use crate::ssh::client;
+use crate::storage::secrets::SecretStore;
 use crate::types::{AuthType, ConnectRequest, SessionInfo, TestResult};
 
 /// 解析认证凭据。
@@ -18,13 +19,13 @@ use crate::types::{AuthType, ConnectRequest, SessionInfo, TestResult};
 /// 2. 钥匙串中为该 `host_id` 保存的值（复��已保存主机时走这条路径）。
 ///
 /// 这样前端在任何情况下都拿不到明文秘密。
-fn resolve_credential(request: &ConnectRequest) -> AppResult<Credential> {
+fn resolve_credential(request: &ConnectRequest, store: &SecretStore) -> AppResult<Credential> {
     match request.auth_type {
         AuthType::Password => {
             let password = match request.password.as_ref().filter(|p| !p.is_empty()) {
                 Some(p) => Some(p.clone()),
                 None => match request.host_id.as_ref() {
-                    Some(id) => load_password(id)?,
+                    Some(id) => load_password(store, id)?,
                     None => None,
                 },
             };
@@ -45,7 +46,7 @@ fn resolve_credential(request: &ConnectRequest) -> AppResult<Credential> {
             let passphrase = match request.passphrase.as_ref().filter(|p| !p.is_empty()) {
                 Some(p) => Some(p.clone()),
                 None => match request.host_id.as_ref() {
-                    Some(id) => load_passphrase(id)?,
+                    Some(id) => load_passphrase(store, id)?,
                     None => None,
                 },
             };
@@ -75,7 +76,7 @@ pub async fn session_connect(
         return Err(AppError::InvalidInput("端口不能为 0".into()));
     }
 
-    let credential = resolve_credential(&request)?;
+    let credential = resolve_credential(&request, &state.secrets)?;
     let label = request
         .label
         .as_ref()
@@ -119,16 +120,14 @@ pub async fn session_connect(
 
         // 把本次使用的密码写进钥匙串，供下次复用。
         if let Credential::Password(pw) = &credential {
-            let _ = crate::storage::keyring::set(
-                &crate::storage::keyring::password_account(&host_id),
-                pw,
-            );
+            let _ = state
+                .secrets
+                .set(&crate::storage::keyring::password_account(&host_id), pw);
         }
         if let Some(pp) = request.passphrase.as_ref().filter(|p| !p.is_empty()) {
-            let _ = crate::storage::keyring::set(
-                &crate::storage::keyring::passphrase_account(&host_id),
-                pp,
-            );
+            let _ = state
+                .secrets
+                .set(&crate::storage::keyring::passphrase_account(&host_id), pp);
         }
     }
 
@@ -143,7 +142,7 @@ pub async fn session_test(
 ) -> AppResult<TestResult> {
     let started = Instant::now();
 
-    let credential = match resolve_credential(&request) {
+    let credential = match resolve_credential(&request, &state.secrets) {
         Ok(c) => c,
         Err(e) => {
             return Ok(TestResult {

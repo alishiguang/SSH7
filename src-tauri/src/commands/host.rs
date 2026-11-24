@@ -9,6 +9,7 @@ use crate::commands::AppState;
 use crate::error::AppResult;
 use crate::storage::hosts::SavedHost;
 use crate::storage::keyring;
+use crate::storage::secrets::SecretStore;
 use crate::types::{HostSaveRequest, SavedHostDto};
 
 /// 读取全部已保存主机。
@@ -56,20 +57,24 @@ pub fn host_save(
 
     // 密码
     if let Some(pw) = request.password.as_ref().filter(|p| !p.is_empty()) {
-        keyring::set(&keyring::password_account(&host.id), pw)?;
+        state
+            .secrets
+            .set(&keyring::password_account(&host.id), pw)?;
         host.has_password = true;
     } else if request.password.as_ref().is_some() {
         // 显式传空串表示清除密码。
-        let _ = keyring::delete(&keyring::password_account(&host.id));
+        let _ = state.secrets.delete(&keyring::password_account(&host.id));
         host.has_password = false;
     }
 
     // 私钥口令
     if let Some(pp) = request.passphrase.as_ref().filter(|p| !p.is_empty()) {
-        keyring::set(&keyring::passphrase_account(&host.id), pp)?;
+        state
+            .secrets
+            .set(&keyring::passphrase_account(&host.id), pp)?;
         host.has_passphrase = true;
     } else if request.passphrase.as_ref().is_some() {
-        let _ = keyring::delete(&keyring::passphrase_account(&host.id));
+        let _ = state.secrets.delete(&keyring::passphrase_account(&host.id));
         host.has_passphrase = false;
     }
 
@@ -80,19 +85,19 @@ pub fn host_save(
 /// 删除主机，同时清理钥匙串条目。
 #[tauri::command]
 pub fn host_delete(state: State<'_, AppState>, host_id: String) -> AppResult<Vec<SavedHostDto>> {
-    let _ = keyring::delete(&keyring::password_account(&host_id));
-    let _ = keyring::delete(&keyring::passphrase_account(&host_id));
+    let _ = state.secrets.delete(&keyring::password_account(&host_id));
+    let _ = state.secrets.delete(&keyring::passphrase_account(&host_id));
     let hosts = state.hosts.remove(&host_id)?;
     Ok(hosts.into_iter().map(to_dto).collect())
 }
 
-/// 读取某主机在钥匙串中保存的密码。**只供 Rust 内部连接流程使用**，
+/// 读取某主机保存的密码。**只供 Rust 内部连接流程使用**，
 /// 不暴露给前端 —— 前端永远拿不到明文。
-pub(crate) fn load_password(host_id: &str) -> AppResult<Option<String>> {
-    keyring::get(&keyring::password_account(host_id))
+pub(crate) fn load_password(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {
+    store.get(&keyring::password_account(host_id))
 }
 
-/// 读取某主机在钥匙串中保存的私钥口令。
-pub(crate) fn load_passphrase(host_id: &str) -> AppResult<Option<String>> {
-    keyring::get(&keyring::passphrase_account(host_id))
+/// 读取某主机保存的私钥口令。
+pub(crate) fn load_passphrase(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {
+    store.get(&keyring::passphrase_account(host_id))
 }
