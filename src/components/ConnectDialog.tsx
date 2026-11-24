@@ -58,11 +58,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
     return [...set].sort()
   }, [groups])
 
-  /**
-   * 新建连接时默认落在「当前选中的那台机器所在的分组」里 ——
-   * 顺着上下文往下建，少改一次字段。
-   * 没选中任何机器就是 HOSTS（未分组）。
-   */
+  /** 当前选中的那台机器在哪个分组 —— 新建连接时默认落在那儿。 */
   const selectedHostId = useUi((s) => s.selectedHostId)
   const allHosts = useHosts((s) => s.hosts)
   const defaultGroup = useMemo(() => {
