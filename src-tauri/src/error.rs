@@ -57,6 +57,9 @@ pub struct AppErrorPayload {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// 技术细节（原始错误文本）。界面以小字展示，排查问题时用。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// 应用内流转的错误类型。
@@ -152,8 +155,35 @@ impl AppError {
             }
             AppError::Io(_) => "检查本地路径是否存在以及读写权限".into(),
             AppError::InvalidInput(_) => "修正表单中的字段后再试".into(),
-            AppError::Internal(_) => return None,
+            AppError::Internal(_) => "重试一次；若仍失败，请把下方的错误详情一并反馈".into(),
         })
+    }
+
+    /// 错误的技术细节。界面以小字展示，便于定位问题。
+    pub fn detail(&self) -> Option<String> {
+        let raw = match self {
+            AppError::Timeout => return None,
+            AppError::AuthFailed(d)
+            | AppError::KeyInvalid(d)
+            | AppError::HostKeyRejected(d)
+            | AppError::ConnectionRefused(d)
+            | AppError::NetworkUnreachable(d)
+            | AppError::DnsFailed(d)
+            | AppError::NoSuchPath(d)
+            | AppError::PermissionDenied(d)
+            | AppError::NoSuchHost(d)
+            | AppError::SessionGone(d)
+            | AppError::KeyringUnavailable(d)
+            | AppError::Io(d)
+            | AppError::InvalidInput(d)
+            | AppError::Internal(d) => d,
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
     }
 
     pub fn payload(&self) -> AppErrorPayload {
@@ -161,6 +191,7 @@ impl AppError {
             code: self.code().as_str().to_string(),
             message: self.to_string(),
             hint: self.hint(),
+            detail: self.detail(),
         }
     }
 }

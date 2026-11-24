@@ -9,6 +9,8 @@ export interface Toast {
   title: string
   message?: string
   hint?: string
+  /** 技术细节，小字展示，排查问题时用。 */
+  detail?: string
 }
 
 interface UiStore {
@@ -46,15 +48,21 @@ export const useUi = create<UiStore>((set, get) => ({
   setFilePanel: (open) => set({ filePanelOpen: open }),
 
   reportError: (title, e) => {
+    // Rust 侧的结构化载荷带 code/detail；普通 Error 至少能拿到 message。
     const payload: AppErrorPayload =
       'code' in e
         ? (e as AppErrorPayload)
-        : { code: 'INTERNAL', message: (e as Error).message }
+        : {
+            code: 'INTERNAL',
+            message: (e as Error).message,
+            detail: 'detail' in e ? String((e as { detail?: unknown }).detail) : undefined,
+          }
     get().push({
       kind: 'error',
       title,
       message: payload.message,
       hint: payload.hint,
+      detail: payload.detail,
     })
   },
 }))

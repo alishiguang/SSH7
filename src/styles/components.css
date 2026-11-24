@@ -1020,6 +1020,22 @@
 .file-state.is-error {
   color: var(--red);
 }
+/* 原始错误文本：等宽小字，最多四行 */
+.file-error-detail {
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  color: var(--cream-3);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.45;
+  text-align: left;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .file-rows {
   padding-bottom: 6px;
@@ -1194,6 +1210,21 @@
   font-size: calc(11px * var(--ui-scale));
   color: var(--cream-3);
   line-height: 1.55;
+}
+/* 技术细节：等宽小字，最多三行，避免一大坨原始错误刷屏 */
+.toast-detail {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--ui-scale));
+  color: var(--cream-3);
+  line-height: 1.45;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .toast-close {
   flex-shrink: 0;

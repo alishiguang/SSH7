@@ -28,12 +28,15 @@ import type {
 export class BridgeError extends Error {
   readonly code: string
   readonly hint?: string
+  /** 原始错误文本，排查问题时展示。 */
+  readonly detail?: string
 
   constructor(payload: AppErrorPayload) {
     super(payload.message)
     this.name = 'BridgeError'
     this.code = payload.code
     this.hint = payload.hint
+    this.detail = payload.detail
   }
 }
 

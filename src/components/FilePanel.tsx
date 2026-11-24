@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { sftpApi } from '../api/bridge'
+import { BridgeError, sftpApi } from '../api/bridge'
 import type { RemoteFile } from '../api/types'
 import { useDropZone } from '../hooks/useDropZone'
 import { useTransfers } from '../store/transfers'
@@ -46,7 +46,7 @@ export default function FilePanel({ sessionId, onClose }: Props) {
   const [files, setFiles] = useState<RemoteFile[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ message: string; detail?: string } | null>(null)
 
   const reportError = useUi((s) => s.reportError)
   const push = useUi((s) => s.push)
@@ -74,7 +74,9 @@ export default function FilePanel({ sessionId, onClose }: Props) {
         setSelected(null)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        setError(msg)
+        // 结构化错误带原始细节，一并显示，别只留一句「内部错误」。
+        const detail = e instanceof BridgeError ? e.detail : undefined
+        setError({ message: msg, detail })
         reportError('读取目录失败', e as never)
       } finally {
         setLoading(false)
@@ -277,7 +279,8 @@ export default function FilePanel({ sessionId, onClose }: Props) {
         ) : error ? (
           <div className="file-state is-error">
             <Icon name="alert" size={16} />
-            <span>{error}</span>
+            <span>{error.message}</span>
+            {error.detail && <span className="file-error-detail">{error.detail}</span>}
             <button className="btn btn-ghost btn-xs" onClick={() => void load(cwd)}>
               重试
             </button>

@@ -22,6 +22,7 @@ export default function Toasts() {
             <div className="toast-title">{t.title}</div>
             {t.message && <div className="toast-message">{t.message}</div>}
             {t.hint && <div className="toast-hint">{t.hint}</div>}
+            {t.detail && <div className="toast-detail">{t.detail}</div>}
           </div>
           <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="关闭">
             <Icon name="x" size={11} />

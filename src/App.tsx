@@ -141,12 +141,16 @@ export default function App() {
   useEffect(() => {
     let dispose: (() => void) | undefined
     void (async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      dispose = await getCurrentWindow().onCloseRequested(() => {
-        for (const s of useSessions.getState().sessions) {
-          void sessionApi.disconnect(s.id).catch(() => {})
-        }
-      })
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        dispose = await getCurrentWindow().onCloseRequested(() => {
+          for (const s of useSessions.getState().sessions) {
+            void sessionApi.disconnect(s.id).catch(() => {})
+          }
+        })
+      } catch {
+        // 非 Tauri 环境（如浏览器预览）拿不到窗口 API，忽略即可。
+      }
     })()
     return () => dispose?.()
   }, [])

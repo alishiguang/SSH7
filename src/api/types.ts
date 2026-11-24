@@ -50,6 +50,8 @@ export interface AppErrorPayload {
   code: string
   message: string
   hint?: string
+  /** 技术细节（原始错误文本），界面以小字展示，排查问题时用。 */
+  detail?: string
 }
 
 /** 连通性测试结果。 */
