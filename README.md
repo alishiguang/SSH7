@@ -31,6 +31,9 @@ SSH7 把 **SSH 协议、SFTP、密钥解析、凭据存储全部搬到 Rust**：
 ## 功能
 
 - **多会话标签页** —— 同时管理多个 SSH 连接，标签切换互不干扰
+- **会话去重** —— 点击已存在会话的主机直接切换过去，不会重复开新连接
+- **显式新开** —— 主机行悬停出现「＋」，随时为同一主机另开一个会话
+- **右键克隆** —— 在会话上右键「克隆为新会话」，凭据在 Rust 侧复用，密码不经前端
 - **完整终端** —— xterm.js，256 色、可调整尺寸、链接识别
 - **SFTP 文件管理** —— 目录浏览、上传、下载、新建目录、**递归删除**
 - **拖拽上传** —— 把本地文件拖进终端区或文件面板即可上传
@@ -104,21 +107,28 @@ src-tauri/               Rust 核心
 npm run dev          # 只跑前端（Vite）
 npm run tauri dev    # 完整桌面应用
 npm run build        # 类型检查 + 前端构建
+npm test             # 前端单元测试（vitest）
 
 cd src-tauri
 cargo test           # Rust 单元测试
 cargo clippy --all-targets
 ```
 
+持续集成由 GitHub Actions 托管：前端构建与单测、Rust `fmt` / `clippy` / `test`、macOS 打包。
+推送 `v*` 标签会自动构建 arm64 / x64 / universal 的 `.dmg` 并发布 Release。
+
 ## 测试覆盖
 
-Rust 单元测试覆盖了最容易出错的几个地方：
+Rust 单元测试（32 项）覆盖了最容易出错的几个地方：
 
 - OSC 7 解析器：序列被 chunk 切开、BEL / ST 双终止符、百分号解码、缓冲区溢出保护
 - 远端路径拼接：任意目录层级下的上传目标路径
 - 传输百分比：`total = 0` 时不产生 `NaN`
 - shell 钩子：bash 追加而非覆盖 `PROMPT_COMMAND`、zsh 走 `precmd_functions`、fish 走事件
 - 主机存储：落盘内容不含任何明文秘密字段
+
+前端单元测试（vitest）覆盖会话状态机：连接中/已连接的会话会被 `findByTarget` 命中
+（点击主机不重复开新会话），已断开与失败的会话不再阻挡新会话，以及标签关闭后的焦点回落。
 
 ## 安全说明
 
