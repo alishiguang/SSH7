@@ -144,6 +144,27 @@ pub fn host_group_remove(state: State<'_, AppState>, name: String) -> AppResult<
     Ok(to_list(hosts, groups))
 }
 
+/// 重排分组顺序。`order` 是新的分组名顺序。
+#[tauri::command]
+pub fn host_groups_reorder(
+    state: State<'_, AppState>,
+    order: Vec<String>,
+) -> AppResult<HostListDto> {
+    let (hosts, groups) = state.hosts.reorder_groups(&order)?;
+    Ok(to_list(hosts, groups))
+}
+
+/// 把主机挪到某个分组。`group` 为空表示回到「未分组」。
+#[tauri::command]
+pub fn host_move_to_group(
+    state: State<'_, AppState>,
+    host_id: String,
+    group: Option<String>,
+) -> AppResult<HostListDto> {
+    let (hosts, groups) = state.hosts.set_group(&host_id, group.as_deref())?;
+    Ok(to_list(hosts, groups))
+}
+
 /// 读取某主机保存的密码。**只供 Rust 内部连接流程使用**，
 /// 不暴露给前端 —— 前端永远拿不到明文。
 pub(crate) fn load_password(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {

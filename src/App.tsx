@@ -37,6 +37,7 @@ export default function App() {
 
   const hosts = useHosts((s) => s.hosts)
   const loadHosts = useHosts((s) => s.load)
+  const removeHost = useHosts((s) => s.remove)
 
   const filePanelOpen = useUi((s) => s.filePanelOpen)
   const setFilePanel = useUi((s) => s.setFilePanel)
@@ -245,19 +246,15 @@ export default function App() {
     [handleConnect],
   )
 
-  const handleSelectHost = useCallback(
+  /** 切到该主机已有的会话（没有就不切）。 */
+  const switchToHostSession = useCallback(
     (host: SavedHost) => {
-      // 已经存在（或正在建立）同一目标主机会话时，直接切过去而不是再开一个。
       const existing = useSessions
         .getState()
         .findByTarget(host.host, host.port, host.username)
-      if (existing) {
-        setActive(existing.id)
-        return
-      }
-      void openHostSession(host)
+      if (existing) setActive(existing.id)
     },
-    [openHostSession, setActive],
+    [setActive],
   )
 
   /** 克隆会话：凭据在 Rust 侧复用，前端不接触明文密码。 */
@@ -328,6 +325,57 @@ export default function App() {
     ]
   }, [menu, sessions, handleCloneSession, patchSession, removeSession])
 
+  /* ── 主机右键菜单 ───────────────────────────────── */
+  const [hostMenu, setHostMenu] = useState<{
+    x: number
+    y: number
+    hostId: string
+  } | null>(null)
+
+  const hostMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (!hostMenu) return []
+    const h = hosts.find((x) => x.id === hostMenu.hostId)
+    if (!h) return []
+    const existing = useSessions
+      .getState()
+      .findByTarget(h.host, h.port, h.username)
+    const items: ContextMenuItem[] = [
+      {
+        id: 'open',
+        label: '开启新会话',
+        icon: 'plus',
+        onSelect: () => void openHostSession(h),
+      },
+    ]
+    if (existing) {
+      items.push({
+        id: 'switch',
+        label: '切换到已有会话',
+        icon: 'terminal',
+        onSelect: () => switchToHostSession(h),
+      })
+    }
+    items.push(
+      {
+        id: 'edit',
+        label: '编辑',
+        icon: 'edit',
+        onSelect: () => {
+          setEditingHost(h)
+          setDialogOpen(true)
+        },
+      },
+      {
+        id: 'delete',
+        label: '删除',
+        icon: 'trash',
+        danger: true,
+        onSelect: () => void removeHost(h.id),
+      },
+    )
+    return items
+  }, [hostMenu, hosts, openHostSession, switchToHostSession, removeHost])
+
   const activeSession = sessions.find((s) => s.id === activeId)
 
   return (
@@ -352,12 +400,12 @@ export default function App() {
             setEditingHost(null)
             setDialogOpen(true)
           }}
-          onSelectHost={handleSelectHost}
           onOpenNewSession={(host) => void openHostSession(host)}
           onEditHost={(h) => {
             setEditingHost(h)
             setDialogOpen(true)
           }}
+          onHostMenu={(host, x, y) => setHostMenu({ hostId: host.id, x, y })}
         />
 
         <main className="workspace">
@@ -458,6 +506,15 @@ export default function App() {
           y={menu.y}
           items={menuItems}
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {hostMenu && hostMenuItems.length > 0 && (
+        <ContextMenu
+          x={hostMenu.x}
+          y={hostMenu.y}
+          items={hostMenuItems}
+          onClose={() => setHostMenu(null)}
         />
       )}
 

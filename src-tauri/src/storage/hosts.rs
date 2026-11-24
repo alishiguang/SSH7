@@ -217,6 +217,68 @@ impl HostsStore {
         self.save_all(&file.hosts, &file.groups)?;
         Ok((file.hosts, file.groups))
     }
+
+    /// 重排分组顺序。
+    ///
+    /// `order` 是新的顺序（只写分组名）。清单里没提到的分组保持相对顺序接在后面 ——
+    /// 这样前端漏传一个也不会把分组弄丢。
+    pub fn reorder_groups(&self, order: &[String]) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let file = self.load_file()?;
+        let mut next: Vec<String> = Vec::new();
+        for name in order {
+            let name = name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            // 认识这个名字才收：清单里的，或主机上正用着的。
+            let known = file.groups.iter().any(|g| g == name)
+                || file
+                    .hosts
+                    .iter()
+                    .any(|h| h.group.as_deref().map(str::trim) == Some(name));
+            if known && !next.iter().any(|g| g == name) {
+                next.push(name.to_string());
+            }
+        }
+        for g in &file.groups {
+            if !next.iter().any(|x| x == g) {
+                next.push(g.clone());
+            }
+        }
+        self.save_all(&file.hosts, &next)?;
+        Ok((file.hosts, next))
+    }
+
+    /// 把主机挪到某个分组。`group` 为空表示回到「未分组」。
+    ///
+    /// 目标分组还不存在就顺手登记进清单 —— 拖到哪，哪就有了。
+    pub fn set_group(
+        &self,
+        host_id: &str,
+        group: Option<&str>,
+    ) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let mut file = self.load_file()?;
+        let name = group.map(str::trim).filter(|s| !s.is_empty());
+
+        let mut found = false;
+        for h in file.hosts.iter_mut() {
+            if h.id == host_id {
+                h.group = name.map(str::to_string);
+                found = true;
+            }
+        }
+        if !found {
+            return Err(AppError::NoSuchHost("主机不存在".into()));
+        }
+        if let Some(n) = name {
+            if !file.groups.iter().any(|g| g == n) {
+                file.groups.push(n.to_string());
+            }
+        }
+
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
+    }
 }
 
 #[cfg(test)]
@@ -429,6 +491,56 @@ mod tests {
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].label, "旧机器");
         assert!(store.groups().unwrap().is_empty());
+    }
+
+    /// 拖动排序：分组顺序按新的来，没提到的接在后面。
+    #[test]
+    fn reorder_groups_persists_new_order() {
+        let store = HostsStore::new(&temp_dir());
+        for name in ["甲", "乙", "丙"] {
+            store.create_group(name).unwrap();
+        }
+
+        let (_, groups) = store
+            .reorder_groups(&["丙".to_string(), "甲".to_string()])
+            .unwrap();
+        assert_eq!(
+            groups,
+            vec!["丙".to_string(), "甲".to_string(), "乙".to_string()]
+        );
+
+        // 落盘的还是新顺序
+        assert_eq!(
+            store.groups().unwrap(),
+            vec!["丙".to_string(), "甲".to_string(), "乙".to_string()]
+        );
+    }
+
+    /// 主机拖到别的分组；拖到不存在的分组就把它建出来。
+    #[test]
+    fn set_group_moves_host_and_creates_group() {
+        let store = HostsStore::new(&temp_dir());
+        let mut h = sample("a");
+        h.group = Some("甲".into());
+        store.upsert(&h).unwrap();
+
+        let (hosts, groups) = store.set_group("a", Some("乙")).unwrap();
+        assert_eq!(hosts[0].group.as_deref(), Some("乙"));
+        assert!(groups.iter().any(|g| g == "乙"), "目标分组要进清单");
+
+        // 拖回未分组
+        let (hosts, groups) = store.set_group("a", None).unwrap();
+        assert_eq!(hosts[0].group, None);
+        assert!(groups.iter().any(|g| g == "乙"), "分组本身还在，只是空了");
+    }
+
+    /// 拖到不存在的机器上要报错，别默默把分组改了。
+    #[test]
+    fn set_group_rejects_unknown_host() {
+        let store = HostsStore::new(&temp_dir());
+        store.upsert(&sample("a")).unwrap();
+        assert!(store.set_group("nope", Some("甲")).is_err());
+        assert_eq!(store.load().unwrap()[0].group, None);
     }
 
     /// 缺陷 #1 的回归测试：落盘内容里不能出现任何明文秘密。

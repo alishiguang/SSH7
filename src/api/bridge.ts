@@ -102,6 +102,11 @@ export const hostApi = {
     call<HostList>('host_group_rename', { oldName, newName }),
   /** 删除分组：组里的主机回到「未分组」，主机本身不删。 */
   removeGroup: (name: string) => call<HostList>('host_group_remove', { name }),
+  /** 重排分组顺序。 */
+  reorderGroups: (order: string[]) => call<HostList>('host_groups_reorder', { order }),
+  /** 把主机挪到某个分组（不传 group = 回到「未分组」）。 */
+  moveHostToGroup: (hostId: string, group?: string) =>
+    call<HostList>('host_move_to_group', { hostId, group: group ?? null }),
 }
 
 /* ── 会话 ───────────────────────────────────────────── */

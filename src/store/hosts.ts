@@ -17,6 +17,10 @@ interface HostsStore {
   renameGroup: (oldName: string, newName: string) => Promise<void>
   /** 删除分组：组里的主机回到「未分组」。 */
   removeGroup: (name: string) => Promise<void>
+  /** 重排分组顺序。 */
+  reorderGroups: (order: string[]) => Promise<void>
+  /** 把主机挪到某个分组（不传 group = 回到「未分组」）。 */
+  moveHostToGroup: (hostId: string, group?: string) => Promise<void>
 }
 
 export const useHosts = create<HostsStore>((set) => ({
@@ -51,6 +55,16 @@ export const useHosts = create<HostsStore>((set) => ({
 
   removeGroup: async (name) => {
     const { hosts, groups } = await hostApi.removeGroup(name)
+    set({ hosts, groups })
+  },
+
+  reorderGroups: async (order) => {
+    const { hosts, groups } = await hostApi.reorderGroups(order)
+    set({ hosts, groups })
+  },
+
+  moveHostToGroup: async (hostId, group) => {
+    const { hosts, groups } = await hostApi.moveHostToGroup(hostId, group)
     set({ hosts, groups })
   },
 }))

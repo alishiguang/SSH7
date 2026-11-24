@@ -53,6 +53,8 @@ pub fn run() {
             commands::host::host_group_rename,
             commands::host::host_group_remove,
             commands::host::host_group_create,
+            commands::host::host_groups_reorder,
+            commands::host::host_move_to_group,
             commands::credentials::credential_store_info,
             commands::credentials::credential_store_set,
             commands::session::session_connect,

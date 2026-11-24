@@ -135,6 +135,27 @@
                 })
                 return { hosts: hosts.slice(), groups: groups.slice() }
               }
+              case 'host_groups_reorder': {
+                var order = (args && args.order) || []
+                var next = []
+                order.forEach(function (n) {
+                  if (n && next.indexOf(n) < 0) next.push(n)
+                })
+                groups.forEach(function (g) {
+                  if (next.indexOf(g) < 0) next.push(g)
+                })
+                groups = next
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
+              case 'host_move_to_group': {
+                var hid = args && args.hostId
+                var target = (args && args.group) || ''
+                hosts.forEach(function (x) {
+                  if (x.id === hid) x.group = target || undefined
+                })
+                if (target && groups.indexOf(target) < 0) groups.push(target)
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
               case 'session_connect': {
                 var r = (args && args.request) || {}
                 // 模拟真实握手耗时，好看到「正在连接」那一瞬间的界面。

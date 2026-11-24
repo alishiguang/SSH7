@@ -17,12 +17,15 @@ interface UiStore {
   toasts: Toast[]
   sidebarCollapsed: boolean
   filePanelOpen: boolean
+  /** 侧边栏里当前选中的主机（单击只选中，不建立连接）。 */
+  selectedHostId: string | null
   /** 正在改名的会话 id（null 表示没有）。改名期间终端不许抢焦点。 */
   renamingSessionId: string | null
   push: (t: Omit<Toast, 'id'>) => void
   dismiss: (id: string) => void
   toggleSidebar: () => void
   setFilePanel: (open: boolean) => void
+  setSelectedHost: (id: string | null) => void
   setRenamingSession: (id: string | null) => void
   /** 把结构化错误转成通知 */
   reportError: (title: string, e: AppErrorPayload | Error) => void
@@ -34,6 +37,7 @@ export const useUi = create<UiStore>((set, get) => ({
   toasts: [],
   sidebarCollapsed: false,
   filePanelOpen: false,
+  selectedHostId: null,
   renamingSessionId: null,
 
   push: (t) => {
@@ -50,6 +54,8 @@ export const useUi = create<UiStore>((set, get) => ({
   toggleSidebar: () => set((prev) => ({ sidebarCollapsed: !prev.sidebarCollapsed })),
 
   setFilePanel: (open) => set({ filePanelOpen: open }),
+
+  setSelectedHost: (id) => set({ selectedHostId: id }),
 
   setRenamingSession: (id) => set({ renamingSessionId: id }),
 
