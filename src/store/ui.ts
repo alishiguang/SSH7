@@ -21,12 +21,15 @@ interface UiStore {
   selectedHostId: string | null
   /** 正在改名的会话 id（null 表示没有）。改名期间终端不许抢焦点。 */
   renamingSessionId: string | null
+  /** 确认框是否开着。开着时下层对话框的 Esc 让位给它。 */
+  confirmOpen: boolean
   push: (t: Omit<Toast, 'id'>) => void
   dismiss: (id: string) => void
   toggleSidebar: () => void
   setFilePanel: (open: boolean) => void
   setSelectedHost: (id: string | null) => void
   setRenamingSession: (id: string | null) => void
+  setConfirmOpen: (open: boolean) => void
   /** 把结构化错误转成通知 */
   reportError: (title: string, e: AppErrorPayload | Error) => void
 }
@@ -39,6 +42,7 @@ export const useUi = create<UiStore>((set, get) => ({
   filePanelOpen: false,
   selectedHostId: null,
   renamingSessionId: null,
+  confirmOpen: false,
 
   push: (t) => {
     const id = `toast-${++toastSeq}`
@@ -58,6 +62,8 @@ export const useUi = create<UiStore>((set, get) => ({
   setSelectedHost: (id) => set({ selectedHostId: id }),
 
   setRenamingSession: (id) => set({ renamingSessionId: id }),
+
+  setConfirmOpen: (open) => set({ confirmOpen: open }),
 
   reportError: (title, e) => {
     // Rust 侧的结构化载荷带 code/detail；普通 Error 至少能拿到 message。

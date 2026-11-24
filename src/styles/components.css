@@ -506,6 +506,16 @@
   color: var(--cream);
 }
 
+/* 删除确认：比主按钮更亮一档，边缘发红光 —— 不可逆的操作要多看一眼 */
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--red-hi);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--red-hi);
+}
+
 .btn-lg {
   padding: 13px 28px;
   font-size: var(--fs-body);
@@ -706,6 +716,57 @@
   gap: 8px;
 }
 .modal-actions .btn {
+  flex: 1;
+}
+
+/* ── 删除确认 ───────────────────────────────── */
+
+.confirm-backdrop {
+  /* 压在所有东西上面 —— 连接对话框、设置面板、右键菜单都得让位 */
+  z-index: 400;
+  background: rgba(4, 4, 6, 0.86);
+}
+.confirm {
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  background: var(--ink-800);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+  animation: fade-up 0.18s var(--ease);
+}
+.confirm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.confirm-head .meta {
+  color: var(--red);
+}
+.confirm-body {
+  padding: 18px 20px 4px;
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  color: var(--cream);
+}
+.confirm-body .confirm-target {
+  font-family: var(--font-mono);
+  color: var(--cream);
+  word-break: break-all;
+}
+.confirm-body .confirm-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--fs-label);
+  color: var(--cream-2);
+}
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px 18px;
+}
+.confirm-actions .btn {
   flex: 1;
 }
 

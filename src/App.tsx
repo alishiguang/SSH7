@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { events, sessionApi } from './api/bridge'
 import type { ConnectRequest, HostSaveRequest, SavedHost } from './api/types'
 import ConnectDialog from './components/ConnectDialog'
+import ConfirmDialog, { type ConfirmSpec } from './components/ConfirmDialog'
 import ContextMenu, { type ContextMenuItem } from './components/ContextMenu'
 import EmptyState from './components/EmptyState'
 import FilePanel from './components/FilePanel'
@@ -53,6 +54,12 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<SavedHost | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * 待确认的删除操作。null 表示没有。
+   * 凡是会丢东西的操作都先走这里 —— 一次误点不该换来配置消失。
+   */
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null)
+  const askConfirm = useCallback((spec: ConfirmSpec) => setConfirm(spec), [])
 
   const initDrop = useDrop((s) => s.init)
 
@@ -336,10 +343,24 @@ export default function App() {
         label: '关闭会话',
         icon: 'x',
         danger: true,
-        onSelect: () => removeSession(s.id),
+        onSelect: () =>
+          askConfirm({
+            title: 'CLOSE SESSION',
+            message: (
+              <>
+                关闭会话「<span className="confirm-target">{s.label}</span>」？
+                <span className="confirm-hint">
+                  连接会断开，远端正在运行的进程可能受影响。
+                </span>
+              </>
+            ),
+            confirmLabel: '关闭会话',
+            danger: true,
+            onConfirm: () => removeSession(s.id),
+          }),
       },
     ]
-  }, [menu, sessions, handleCloneSession, patchSession, removeSession])
+  }, [menu, sessions, handleCloneSession, patchSession, removeSession, askConfirm])
 
   /* ── 主机右键菜单 ───────────────────────────────── */
   const [hostMenu, setHostMenu] = useState<{
@@ -386,11 +407,25 @@ export default function App() {
         label: '删除',
         icon: 'trash',
         danger: true,
-        onSelect: () => void removeHost(h.id),
+        onSelect: () =>
+          askConfirm({
+            title: 'DELETE HOST',
+            message: (
+              <>
+                删除主机「<span className="confirm-target">{h.label}</span>」？
+                <span className="confirm-hint">
+                  地址、用户名、凭据都会一起删掉，无法恢复。
+                </span>
+              </>
+            ),
+            confirmLabel: '删除',
+            danger: true,
+            onConfirm: () => void removeHost(h.id),
+          }),
       },
     )
     return items
-  }, [hostMenu, hosts, openHostSession, switchToHostSession, removeHost])
+  }, [hostMenu, hosts, openHostSession, switchToHostSession, removeHost, askConfirm])
 
   const activeSession = sessions.find((s) => s.id === activeId)
 
@@ -422,6 +457,7 @@ export default function App() {
             setDialogOpen(true)
           }}
           onHostMenu={(host, x, y) => setHostMenu({ hostId: host.id, x, y })}
+          askConfirm={askConfirm}
         />
 
         <main className="workspace">
@@ -429,6 +465,7 @@ export default function App() {
             onSessionMenu={(sessionId, x, y) => setMenu({ sessionId, x, y })}
             onRenameStart={(sessionId) => setRenamingSession(sessionId)}
             renamingId={renamingSession}
+            askConfirm={askConfirm}
             onRenameEnd={(sessionId, label) => {
               setRenamingSession(null)
               if (!label) return
@@ -501,6 +538,7 @@ export default function App() {
             key={activeSession.id}
             sessionId={activeSession.id}
             onClose={() => setFilePanel(false)}
+            askConfirm={askConfirm}
           />
         )}
       </div>
@@ -539,8 +577,10 @@ export default function App() {
       )}
 
       {settingsOpen && (
-        <SettingsPanel onClose={() => setSettingsOpen(false)} />
+        <SettingsPanel onClose={() => setSettingsOpen(false)} askConfirm={askConfirm} />
       )}
+
+      <ConfirmDialog spec={confirm} onClose={() => setConfirm(null)} />
 
       <Toasts />
     </div>

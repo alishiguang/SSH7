@@ -6,10 +6,13 @@ import { useDropZone } from '../hooks/useDropZone'
 import { useTransfers } from '../store/transfers'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
+import type { ConfirmSpec } from './ConfirmDialog'
 
 interface Props {
   sessionId: string
   onClose: () => void
+  /** 删除前的二次确认。 */
+  askConfirm: (spec: ConfirmSpec) => void
 }
 
 /** 远端路径拼接。避免旧版 `.replace('//','/')` 只替换第一处的问题。 */
@@ -40,7 +43,7 @@ function formatTime(unixSeconds: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-export default function FilePanel({ sessionId, onClose }: Props) {
+export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
   const [cwd, setCwd] = useState('/')
   const [pathInput, setPathInput] = useState('/')
   const [files, setFiles] = useState<RemoteFile[]>([])
@@ -181,18 +184,32 @@ export default function FilePanel({ sessionId, onClose }: Props) {
   }
 
   /* ── 删除 ───────────────────────────────────── */
-  const handleDelete = async (file: RemoteFile) => {
-    const msg = file.isDirectory
-      ? `确认递归删除目录 ${file.name}？其中的全部内容都会被删除。`
-      : `确认删除文件 ${file.name}？`
-    if (!window.confirm(msg)) return
-    try {
-      await sftpApi.remove(sessionId, file.path, file.isDirectory)
-      push({ kind: 'success', title: '已删除', message: file.name })
-      await load(cwd)
-    } catch (e) {
-      reportError('删除失败', e as never)
-    }
+  const handleDelete = (file: RemoteFile) => {
+    askConfirm({
+      title: file.isDirectory ? 'DELETE DIRECTORY' : 'DELETE FILE',
+      message: (
+        <>
+          {file.isDirectory ? '递归删除目录' : '删除文件'}
+          「<span className="confirm-target">{file.name}</span>」？
+          <span className="confirm-hint">
+            {file.isDirectory
+              ? '目录里的全部内容都会被删除，远端无法恢复。'
+              : '远端文件无法恢复。'}
+          </span>
+        </>
+      ),
+      confirmLabel: '删除',
+      danger: true,
+      onConfirm: () => {
+        void sftpApi
+          .remove(sessionId, file.path, file.isDirectory)
+          .then(() => {
+            push({ kind: 'success', title: '已删除', message: file.name })
+            return load(cwd)
+          })
+          .catch((e) => reportError('删除失败', e as never))
+      },
+    })
   }
 
   /* ── 新建目录 ───────────────────────────────── */

@@ -5,6 +5,7 @@ import { lockDragCursor } from '../lib/drag'
 import { useHosts } from '../store/hosts'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
+import type { ConfirmSpec } from './ConfirmDialog'
 
 interface Props {
   onConnect: () => void
@@ -13,6 +14,8 @@ interface Props {
   onEditHost: (host: SavedHost) => void
   /** 主机右键菜单。 */
   onHostMenu: (host: SavedHost, x: number, y: number) => void
+  /** 删除前的二次确认。 */
+  askConfirm: (spec: ConfirmSpec) => void
 }
 
 /** 一个分组。`name` 为空表示「未分组」。 */
@@ -32,6 +35,7 @@ export default function Sidebar({
   onOpenNewSession,
   onEditHost,
   onHostMenu,
+  askConfirm,
 }: Props) {
   const collapsed = useUi((s) => s.sidebarCollapsed)
   const toggleSidebar = useUi((s) => s.toggleSidebar)
@@ -288,17 +292,51 @@ export default function Sidebar({
       .catch((e) => reportError('分组改名失败', e))
   }
 
+  /** 删除分组 —— 先确认，免得手一抖整组就没了。 */
   const deleteGroup = (g: HostGroup) => {
-    void removeGroup(g.name)
-      .then(() => {
-        setCollapsedGroups((prev) => prev.filter((x) => x !== g.name))
-        push({
-          kind: 'info',
-          title: '已删除分组',
-          message: `「${g.name}」的 ${g.hosts.length} 台主机回到未分组`,
-        })
-      })
-      .catch((e) => reportError('删除分组失败', e))
+    askConfirm({
+      title: 'DELETE GROUP',
+      message: (
+        <>
+          删除分组「<span className="confirm-target">{g.name}</span>」？
+          <span className="confirm-hint">
+            组里的 {g.hosts.length} 台机器会回到「未分组」，机器本身不会被删。
+          </span>
+        </>
+      ),
+      confirmLabel: '删除分组',
+      danger: true,
+      onConfirm: () => {
+        void removeGroup(g.name)
+          .then(() => {
+            setCollapsedGroups((prev) => prev.filter((x) => x !== g.name))
+            push({
+              kind: 'info',
+              title: '已删除分组',
+              message: `「${g.name}」的 ${g.hosts.length} 台主机回到未分组`,
+            })
+          })
+          .catch((e) => reportError('删除分组失败', e))
+      },
+    })
+  }
+
+  /** 删除主机 —— 同样先确认。 */
+  const deleteHost = (h: SavedHost) => {
+    askConfirm({
+      title: 'DELETE HOST',
+      message: (
+        <>
+          删除主机「<span className="confirm-target">{h.label}</span>」？
+          <span className="confirm-hint">
+            地址、用户名、凭据都会一起删掉，无法恢复。
+          </span>
+        </>
+      ),
+      confirmLabel: '删除',
+      danger: true,
+      onConfirm: () => void removeHost(h.id),
+    })
   }
 
   if (collapsed) {
@@ -373,7 +411,7 @@ export default function Sidebar({
             title="删除"
             onClick={(e) => {
               e.stopPropagation()
-              void removeHost(h.id)
+              deleteHost(h)
             }}
           >
             <Icon name="x" size={12} />

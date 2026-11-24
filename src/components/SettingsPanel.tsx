@@ -11,11 +11,15 @@ import {
   UI_SCALE_MIN,
   useSettings,
 } from '../store/settings'
+import { useUi } from '../store/ui'
 
 import { Icon } from './Icons'
+import type { ConfirmSpec } from './ConfirmDialog'
 
 interface Props {
   onClose: () => void
+  /** 危险操作前的二次确认。 */
+  askConfirm: (spec: ConfirmSpec) => void
 }
 
 /** 两种后端的说明文案。 */
@@ -30,7 +34,7 @@ const BACKEND_NOTES: Record<CredentialBackend, string> = {
  * 显示偏好（字号、界面缩放）与凭据存储位置。
  * 这里只切换**存放位置**，任何时候都拿不到明文密码。
  */
-export default function SettingsPanel({ onClose }: Props) {
+export default function SettingsPanel({ onClose, askConfirm }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   const fontSize = useSettings((s) => s.terminalFontSize)
@@ -78,7 +82,8 @@ export default function SettingsPanel({ onClose }: Props) {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      // 确认框开着的时候，Esc 归它 —— 先关确认框，别把设置面板也关了。
+      if (e.key === 'Escape' && !useUi.getState().confirmOpen) onClose()
     }
     window.addEventListener('mousedown', onPointerDown)
     // 捕获阶段监听：终端获得焦点时，xterm 会吞掉 keydown 的冒泡，
@@ -151,7 +156,24 @@ export default function SettingsPanel({ onClose }: Props) {
         </div>
       </div>
 
-      <button className="btn btn-ghost btn-sm settings-reset" onClick={reset}>
+      <button
+        className="btn btn-ghost btn-sm settings-reset"
+        onClick={() =>
+          askConfirm({
+            title: 'RESET SETTINGS',
+            message: (
+              <>
+                把界面设置恢复到出厂状态？
+                <span className="confirm-hint">
+                  终端字号与界面缩放会回到默认值。主机列表和凭据不受影响。
+                </span>
+              </>
+            ),
+            confirmLabel: '恢复默认',
+            onConfirm: reset,
+          })
+        }
+      >
         恢复默认
         <span className="settings-reset-hint">
           {TERMINAL_FONT_DEFAULT} px / {Math.round(UI_SCALE_DEFAULT * 100)}%

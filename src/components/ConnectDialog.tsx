@@ -98,7 +98,8 @@ export default function ConnectDialog({ editHost, onSubmit, onSaveOnly, onClose 
   // Esc 关闭这个对话框 —— 和右键菜单、设置面板一个规矩。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      // 确认框开着的时候，Esc 归它 —— 先关确认框，别把连接对话框也关了。
+      if (e.key === 'Escape' && !useUi.getState().confirmOpen) onClose()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)

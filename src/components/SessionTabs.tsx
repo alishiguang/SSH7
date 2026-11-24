@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { lockDragCursor } from '../lib/drag'
 import { useSessions } from '../store/sessions'
 import { Icon } from './Icons'
+import type { ConfirmSpec } from './ConfirmDialog'
 
 interface Props {
   /** 会话右键菜单。 */
@@ -13,6 +14,8 @@ interface Props {
   renamingId: string | null
   /** 改名结束：`label` 为 null 表示取消。 */
   onRenameEnd: (sessionId: string, label: string | null) => void
+  /** 关闭前的二次确认。 */
+  askConfirm: (spec: ConfirmSpec) => void
 }
 
 /** 拖动超过这个距离（px）才算拖动，否则当成普通点击。 */
@@ -23,6 +26,7 @@ export default function SessionTabs({
   onRenameStart,
   renamingId,
   onRenameEnd,
+  askConfirm,
 }: Props) {
   const sessions = useSessions((s) => s.sessions)
   const activeId = useSessions((s) => s.activeId)
@@ -191,7 +195,21 @@ export default function SessionTabs({
               title="关闭会话"
               onClick={(e) => {
                 e.stopPropagation()
-                removeSession(s.id)
+                // 关闭会话 = 断连，先问一句 —— 远端正在跑的东西说没就没了。
+                askConfirm({
+                  title: 'CLOSE SESSION',
+                  message: (
+                    <>
+                      关闭会话「<span className="confirm-target">{s.label}</span>」？
+                      <span className="confirm-hint">
+                        连接会断开，远端正在运行的进程可能受影响。
+                      </span>
+                    </>
+                  ),
+                  confirmLabel: '关闭会话',
+                  danger: true,
+                  onConfirm: () => removeSession(s.id),
+                })
               }}
             >
               <Icon name="x" size={11} />
