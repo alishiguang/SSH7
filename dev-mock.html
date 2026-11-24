@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SSH7 — UI 开发预览（模拟后端）</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!--
+      仅用于**前端 UI 开发**：用一套假的 Tauri IPC 响应把界面跑起来，
+      不需要真的连服务器。生产构建不会包含这个文件。
+    -->
+    <script>
+      ;(function () {
+        var hosts = [
+          {
+            id: 'h1',
+            label: '生产服务器',
+            host: '10.0.0.8',
+            port: 22,
+            username: 'root',
+            authType: 'password',
+            hasPassword: true,
+            hasPassphrase: false,
+          },
+          {
+            id: 'h2',
+            label: '跳板机',
+            host: '10.0.0.9',
+            port: 2222,
+            username: 'ops',
+            authType: 'privateKey',
+            privateKeyPath: '~/.ssh/id_ed25519',
+            hasPassword: false,
+            hasPassphrase: true,
+          },
+        ]
+
+        function clone(info) {
+          return {
+            sessionId: 's' + Math.random().toString(36).slice(2, 10),
+            label: info.label + ' · 副本',
+            host: info.host,
+            port: info.port,
+            username: info.username,
+            authType: info.authType,
+          }
+        }
+
+        window.__TAURI_INTERNALS__ = {
+          invoke: async function (cmd, args) {
+            switch (cmd) {
+              case 'plugin:event|listen':
+              case 'plugin:event|unlisten':
+                return 1
+              case 'host_list':
+                return hosts
+              case 'session_connect': {
+                var r = (args && args.request) || {}
+                return {
+                  sessionId: 's' + Math.random().toString(36).slice(2, 10),
+                  label: r.label || r.username + '@' + r.host,
+                  host: r.host,
+                  port: r.port || 22,
+                  username: r.username,
+                  authType: r.authType || 'password',
+                }
+              }
+              case 'session_clone':
+                return clone(hosts[0])
+              case 'session_test':
+                return { ok: true, latencyMs: 42 }
+              case 'sftp_list':
+                return [
+                  {
+                    name: 'logs',
+                    path: '/logs',
+                    isDirectory: true,
+                    isSymlink: false,
+                    size: 0,
+                    modifiedAt: 1750000000,
+                  },
+                  {
+                    name: 'deploy.sh',
+                    path: '/deploy.sh',
+                    isDirectory: false,
+                    isSymlink: false,
+                    size: 4096,
+                    modifiedAt: 1750000000,
+                  },
+                ]
+              default:
+                return null
+            }
+          },
+          transformCallback: function (cb) {
+            var id = Math.floor(Math.random() * 1e9)
+            window['_' + id] = cb
+            return id
+          },
+        }
+      })()
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

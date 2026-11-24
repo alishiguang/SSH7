@@ -1,0 +1,58 @@
+[package]
+name = "ssh7"
+version = "1.0.0"
+description = "SSH7 — 简洁酷炫的跨平台 SSH 客户端"
+authors = ["alishiguang"]
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/alishiguang/SSH7"
+
+[lib]
+name = "ssh7_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
+futures = "0.3"
+bytes = "1"
+
+# `ring` 后端：默认的 `aws-lc-rs` 需要 cmake，而 ring 只需要 C 编译器，
+# 在没有 cmake 的机器上也能直接编译。
+russh = { version = "0.65", default-features = false, features = [
+    "ring",
+    "flate2",
+    "rsa",
+] }
+russh-sftp = "4"
+# russh 0.65 使用 ssh-key 解析密钥，这里直接复用同一版本避免类型不匹配。
+# `encryption` 特性用于解密带口令的私钥。
+ssh-key = { version = "=0.7.0-rc.12", features = ["encryption"] }
+
+keyring = { version = "4", features = ["v1"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+thiserror = "2"
+dashmap = "6"
+url = "2"
+dirs = "6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

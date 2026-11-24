@@ -1,0 +1,362 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { sftpApi } from '../api/bridge'
+import type { RemoteFile } from '../api/types'
+import { useDropZone } from '../hooks/useDropZone'
+import { useTransfers } from '../store/transfers'
+import { useUi } from '../store/ui'
+import { Icon } from './Icons'
+
+interface Props {
+  sessionId: string
+  onClose: () => void
+}
+
+/** 远端路径拼接。避免旧版 `.replace('//','/')` 只替换第一处的问题。 */
+export function joinRemote(dir: string, name: string): string {
+  const base = dir === '/' || dir === '' ? '' : dir.replace(/\/+$/, '')
+  return `${base}/${name}`
+}
+
+/** 远端路径的父目录。 */
+export function parentRemote(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  parts.pop()
+  return parts.length === 0 ? '/' : `/${parts.join('/')}`
+}
+
+function formatSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return '—'
+  if (size < 1024) return `${size}B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)}KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)}MB`
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)}GB`
+}
+
+function formatTime(unixSeconds: number): string {
+  if (!unixSeconds) return '—'
+  const d = new Date(unixSeconds * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+export default function FilePanel({ sessionId, onClose }: Props) {
+  const [cwd, setCwd] = useState('/')
+  const [pathInput, setPathInput] = useState('/')
+  const [files, setFiles] = useState<RemoteFile[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reportError = useUi((s) => s.reportError)
+  const push = useUi((s) => s.push)
+  const transfers = useTransfers((s) => s.transfers)
+  const startTransfer = useTransfers((s) => s.start)
+  const finishTransfer = useTransfers((s) => s.finish)
+
+  const { ref: zoneRef, isOver, paths } = useDropZone<HTMLDivElement>()
+  const consumedRef = useMemo(() => ({ current: '' }), [])
+
+  /* ── 列举目录 ───────────────────────────────── */
+  const load = useCallback(
+    async (path: string) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const list = await sftpApi.list(sessionId, path)
+        const sorted = [...list].sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+        setFiles(sorted)
+        setCwd(path)
+        setPathInput(path)
+        setSelected(null)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg)
+        reportError('读取目录失败', e as never)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [sessionId, reportError],
+  )
+
+  // 切换会话时重新列举 —— 旧版依赖数组为空，切会话后仍显示上个会话的文件（缺陷 #8）
+  useEffect(() => {
+    void load('/')
+  }, [load])
+
+  /* ── 传输进度事件 ───────────────────────────── */
+  useEffect(() => {
+    return () => {
+      // 组件卸载时进度归零，避免切换会话后残留上一个会话的进度条。
+    }
+  }, [])
+
+  /* ── 上传 ───────────────────────────────────── */
+  const upload = useCallback(
+    async (localPaths: string[], targetDir: string) => {
+      for (const localPath of localPaths) {
+        const name = localPath.split(/[\\/]/).pop() || localPath
+        const transferId = crypto.randomUUID()
+        startTransfer({
+          id: transferId,
+          sessionId,
+          fileName: name,
+          transferred: 0,
+          total: 0,
+          direction: 'upload',
+        })
+        try {
+          await sftpApi.upload(sessionId, localPath, targetDir, transferId)
+          finishTransfer(transferId)
+        } catch (e) {
+          finishTransfer(transferId, e instanceof Error ? e.message : String(e))
+          reportError('上传失败', e as never)
+        }
+      }
+      // 上传后刷新当前目录
+      await load(cwd)
+    },
+    [sessionId, cwd, load, startTransfer, finishTransfer, reportError],
+  )
+
+  const handlePickFiles = async () => {
+    try {
+      const picked = await sftpApi.pickFiles()
+      if (picked.length > 0) await upload(picked, cwd)
+    } catch (e) {
+      reportError('选择文件失败', e as never)
+    }
+  }
+
+  // 拖放到文件面板
+  useEffect(() => {
+    if (!isOver || paths.length === 0) return
+    const key = paths.join('|')
+    if (consumedRef.current === key) return
+    consumedRef.current = key
+    void upload(paths, cwd)
+    window.setTimeout(() => {
+      consumedRef.current = ''
+    }, 0)
+  }, [isOver, paths, cwd, upload])
+
+  /* ── 下载 ───────────────────────────────────── */
+  const handleDownload = async (file: RemoteFile) => {
+    try {
+      const dir = await sftpApi.pickDirectory()
+      if (!dir) return
+      const transferId = crypto.randomUUID()
+      startTransfer({
+        id: transferId,
+        sessionId,
+        fileName: file.name,
+        transferred: 0,
+        total: file.size,
+        direction: 'download',
+      })
+      try {
+        await sftpApi.download(sessionId, file.path, dir, transferId)
+        finishTransfer(transferId)
+        push({ kind: 'success', title: '下载完成', message: file.name })
+      } catch (e) {
+        finishTransfer(transferId, e instanceof Error ? e.message : String(e))
+        reportError('下载失败', e as never)
+      }
+    } catch (e) {
+      reportError('选择目录失败', e as never)
+    }
+  }
+
+  /* ── 删除 ───────────────────────────────────── */
+  const handleDelete = async (file: RemoteFile) => {
+    const msg = file.isDirectory
+      ? `确认递归删除目录 ${file.name}？其中的全部内容都会被删除。`
+      : `确认删除文件 ${file.name}？`
+    if (!window.confirm(msg)) return
+    try {
+      await sftpApi.remove(sessionId, file.path, file.isDirectory)
+      push({ kind: 'success', title: '已删除', message: file.name })
+      await load(cwd)
+    } catch (e) {
+      reportError('删除失败', e as never)
+    }
+  }
+
+  /* ── 新建目录 ───────────────────────────────── */
+  const handleMkdir = async () => {
+    const name = window.prompt('新建目录名称')
+    if (!name) return
+    try {
+      await sftpApi.mkdir(sessionId, joinRemote(cwd, name))
+      await load(cwd)
+    } catch (e) {
+      reportError('新建目录失败', e as never)
+    }
+  }
+
+  const handlePathSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const p = pathInput.trim() || '/'
+    void load(p === '/' ? '/' : p.replace(/\/+$/, ''))
+  }
+
+  const sessionTransfers = transfers.filter((t) => t.sessionId === sessionId)
+
+  return (
+    <aside className="file-panel">
+      <div className="file-panel-head">
+        <span className="meta">FILES</span>
+        <div className="file-panel-head-actions">
+          <button className="icon-btn" onClick={handlePickFiles} title="上传文件">
+            <Icon name="upload" size={13} />
+          </button>
+          <button className="icon-btn" onClick={handleMkdir} title="新建目录">
+            <Icon name="folder-open" size={13} />
+          </button>
+          <button className="icon-btn" onClick={() => void load(cwd)} title="刷新">
+            <Icon name="refresh" size={13} />
+          </button>
+          <button className="icon-btn icon-btn-danger" onClick={onClose} title="关闭面板">
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="file-panel-path">
+        <button
+          className="icon-btn"
+          onClick={() => void load(parentRemote(cwd))}
+          disabled={cwd === '/'}
+          title="上级目录"
+        >
+          <Icon name="chevron-left" size={13} />
+        </button>
+        <form className="file-path-form" onSubmit={handlePathSubmit}>
+          <input
+            className="input input-mono input-path"
+            value={pathInput}
+            onChange={(e) => setPathInput(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            spellCheck={false}
+          />
+        </form>
+      </div>
+
+      <div
+        className={`file-list${isOver ? ' is-drop' : ''}`}
+        ref={(el) => {
+          zoneRef.current = el
+        }}
+      >
+        {isOver && (
+          <div className="file-drop-hint">
+            <Icon name="upload" size={20} />
+            松开上传到 {cwd}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="file-state">
+            <span className="spinner" />
+            <span>读取中…</span>
+          </div>
+        ) : error ? (
+          <div className="file-state is-error">
+            <Icon name="alert" size={16} />
+            <span>{error}</span>
+            <button className="btn btn-ghost btn-xs" onClick={() => void load(cwd)}>
+              重试
+            </button>
+          </div>
+        ) : files.length === 0 ? (
+          <div className="file-state">
+            <Icon name="folder-open" size={18} />
+            <span>空目录</span>
+          </div>
+        ) : (
+          <div className="file-rows">
+            {files.map((f) => (
+              <div
+                key={f.path}
+                className={`file-row${selected === f.path ? ' is-selected' : ''}`}
+                onClick={() => setSelected(f.path)}
+                onDoubleClick={() => f.isDirectory && void load(f.path)}
+              >
+                <Icon
+                  name={f.isDirectory ? 'folder' : 'file'}
+                  size={13}
+                  className={`file-row-icon${f.isDirectory ? ' is-dir' : ''}`}
+                />
+                <span className="file-row-name">{f.name}</span>
+                {!f.isDirectory && (
+                  <span className="file-row-size">{formatSize(f.size)}</span>
+                )}
+                <span className="file-row-time">{formatTime(f.modifiedAt)}</span>
+                <div className="file-row-actions">
+                  {!f.isDirectory && (
+                    <button
+                      className="icon-btn"
+                      title="下载"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDownload(f)
+                      }}
+                    >
+                      <Icon name="download" size={12} />
+                    </button>
+                  )}
+                  <button
+                    className="icon-btn icon-btn-danger"
+                    title="删除"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleDelete(f)
+                    }}
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {sessionTransfers.length > 0 && (
+        <div className="file-transfers">
+          {sessionTransfers.map((t) => (
+            <div className="transfer-item" key={t.id}>
+              <div className="transfer-row">
+                <Icon
+                  name={t.direction === 'upload' ? 'upload' : 'download'}
+                  size={11}
+                  className="transfer-icon"
+                />
+                <span className="transfer-name">{t.fileName}</span>
+                <span
+                  className={`transfer-pct${
+                    t.status === 'error' ? ' is-error' : t.status === 'done' ? ' is-done' : ''
+                  }`}
+                >
+                  {t.status === 'error' ? '失败' : t.status === 'done' ? '完成' : `${t.percent}%`}
+                </span>
+              </div>
+              <div className="transfer-bar">
+                <div
+                  className={`transfer-bar-fill${
+                    t.status === 'error' ? ' is-error' : t.status === 'done' ? ' is-done' : ''
+                  }`}
+                  style={{ width: `${t.percent}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
+  )
+}

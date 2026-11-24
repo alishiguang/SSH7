@@ -1,0 +1,190 @@
+/* ============================================================
+   SSH7 — 全局基础样式
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--ink-900);
+  color: var(--cream);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--red-wash);
+  color: var(--cream);
+}
+
+/* 滚动条 —— 细、发丝、低调 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cream-3);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+input::placeholder {
+  color: var(--cream-3);
+}
+
+:focus-visible {
+  outline: 1px solid var(--red);
+  outline-offset: 1px;
+}
+
+/* ── 排版原语 ────────────────────────────── */
+
+/* 等宽元数据标签：// 01  SAVED HOSTS */
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--cream-3);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.meta::before {
+  content: '//';
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* 展示体大标题 */
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.92;
+}
+
+/* ── 交叉准星装饰 ────────────────────────── */
+.crosshair {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  opacity: 0.16;
+  background:
+    linear-gradient(var(--cream), var(--cream)) center/1px 100% no-repeat,
+    linear-gradient(var(--cream), var(--cream)) center/100% 1px no-repeat;
+}
+.crosshair.tl {
+  top: 14px;
+  left: 14px;
+}
+.crosshair.br {
+  bottom: 14px;
+  right: 14px;
+}
+.crosshair.tr {
+  top: 14px;
+  right: 14px;
+}
+.crosshair.bl {
+  bottom: 14px;
+  left: 14px;
+}
+
+/* ── 动画 ────────────────────────────────── */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}

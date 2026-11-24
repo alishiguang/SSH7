@@ -1,0 +1,62 @@
+/* ============================================================
+   SSH7 — 设计令牌
+   视觉语言参考 cindy.cn：Ink 黑底 / Cream 米白字 / 信号红强调
+   ============================================================ */
+
+:root {
+  /* ── 表面 ─────────────────────────────── */
+  --ink-900: #08080a; /* 应用底色 */
+  --ink-850: #0b0b0e; /* 终端背景 */
+  --ink-800: #101014; /* 面板 */
+  --ink-750: #141419; /* 次级面板 */
+  --ink-700: #17171c; /* 悬停 / 选中 */
+
+  /* ── 发丝线 ───────────────────────────── */
+  --line: #24242b;
+  --line-soft: #1b1b21;
+  --line-strong: #34343d;
+
+  /* ── 文字 ─────────────────────────────── */
+  --cream: #f2efe6; /* 主文字 */
+  --cream-2: #9a968d; /* 次级文字 */
+  --cream-3: #5f5c56; /* 三级 / 占位 */
+
+  /* ── 信号色（唯一强调色）──────────────── */
+  --red: #f70121;
+  --red-hi: #ff2440;
+  --red-wash: rgba(247, 1, 33, 0.12);
+  --red-line: rgba(247, 1, 33, 0.34);
+
+  /* ── 状态色 ───────────────────────────── */
+  --green: #3dd68c;
+  --amber: #e8b931;
+  --blue: #5b8dee;
+
+  /* ── 字体 ─────────────────────────────── */
+  --font-display: 'Anton', 'Arial Black', 'Helvetica Neue', system-ui, sans-serif;
+  --font-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo,
+    Consolas, monospace;
+
+  /* ── 排版 ─────────────────────────────── */
+  --track-label: 0.14em; /* 元数据标签字距 */
+  --fs-meta: 10px;
+  --fs-label: 11px;
+  --fs-body: 13px;
+  --fs-title: 15px;
+
+  /* ── 尺寸 ─────────────────────────────── */
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 44px;
+  --panel-w: 340px;
+  --titlebar-h: 28px;
+  --row-h: 34px;
+
+  /* ── 动效 ─────────────────────────────── */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur: 0.18s;
+
+  /* ── 裁切角（呼应 cindy.cn 的斜切按钮）── */
+  --cut: 9px;
+}
