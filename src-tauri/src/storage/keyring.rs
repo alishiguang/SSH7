@@ -54,15 +54,21 @@ pub fn delete(account: &str) -> AppResult<()> {
     }
 }
 
-/// 探测钥匙串是否可用（用于启动时提示用户）。
+/// 探测钥匙串是否可用（用于判断该用哪个后端）。
+///
+/// 结果只算一次 —— 探测本身有副作用（要真的写一条再删掉），
+/// 而且每次调用都会碰到系统钥匙串。
 pub fn probe() -> bool {
-    let probe_account = "__probe__";
-    if set(probe_account, "1").is_ok() {
-        let _ = delete(probe_account);
-        true
-    } else {
-        false
-    }
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        let probe_account = "__probe__";
+        if set(probe_account, "1").is_ok() {
+            let _ = delete(probe_account);
+            true
+        } else {
+            false
+        }
+    })
 }
 
 #[cfg(test)]

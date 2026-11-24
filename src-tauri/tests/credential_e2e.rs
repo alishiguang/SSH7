@@ -184,3 +184,54 @@ async fn credential_from_vault_authenticates_against_real_server() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// 在**真实应用配置目录**上跑一遍：密码写进去、读出来，密文里没有明文。
+///
+/// 临时目录只能证明逻辑对，证明不了「应用真正用的那个目录」也对。
+/// 用 `SSH7_E2E_APP_CONFIG_DIR` 指向应用配置目录即可，例如：
+///
+/// ```sh
+/// SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.alishiguang.ssh7" \
+/// cargo test --test credential_e2e -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "需要真实应用配置目录"]
+fn real_app_config_dir_round_trips_without_plaintext() {
+    let Ok(dir) = std::env::var("SSH7_E2E_APP_CONFIG_DIR") else {
+        eprintln!("跳过：没给 SSH7_E2E_APP_CONFIG_DIR");
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let store = SecretStore::new(&dir);
+    store.ensure_backend().unwrap();
+    println!("真实配置目录的后端：{}", store.backend().as_str());
+
+    let account = format!("ssh7-e2e-real-{}/password", uuid::Uuid::now_v7());
+    let pw = password();
+    store.set(&account, &pw).unwrap();
+    assert_eq!(store.get(&account).unwrap().as_deref(), Some(pw.as_str()));
+
+    // 密文里不该出现明文。
+    let blob = std::fs::read(dir.join("vault.bin")).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&blob).contains(&pw),
+        "真实配置目录的凭据库里不该出现明文"
+    );
+
+    // 主密钥与密文都必须是 0600。
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for f in ["vault.key", "vault.bin"] {
+            let mode = std::fs::metadata(dir.join(f)).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "{f} 必须是 0600");
+        }
+    }
+
+    // 清理测试条目，别在用户自己的库里留东西。
+    store.delete(&account).unwrap();
+    assert!(store.get(&account).unwrap().is_none());
+    println!("真实配置目录往返正常，测试条目已清理");
+}

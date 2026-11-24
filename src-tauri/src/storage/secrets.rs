@@ -11,6 +11,7 @@
 //! 偏好本身不是秘密，明文存在 `credential-store.json` 里。
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -54,11 +55,11 @@ struct PrefFile {
     backend: SecretBackend,
 }
 
-/// 默认后端。
+/// 该平台的默认后端（不探测钥匙串）。
 ///
-/// macOS 上未签名（ad-hoc 签名）的应用每次升级都会失去钥匙串授权，
-/// 反复弹窗索要「登录」钥匙串密码，因此默认改用本地加密文件。
-pub fn default_backend() -> SecretBackend {
+/// macOS 上一律是本地加密文件：未签名的应用每次升级都会失去钥匙串授权，
+/// 反复弹窗索要「登录」钥匙串密码。
+pub fn platform_default_backend() -> SecretBackend {
     if cfg!(target_os = "macos") {
         SecretBackend::Vault
     } else {
@@ -66,16 +67,42 @@ pub fn default_backend() -> SecretBackend {
     }
 }
 
+/// 实际默认后端。
+///
+/// 非 macOS 平台上，钥匙串真的可用才用它 —— Linux 上没装 Secret Service
+/// 时别把用户卡死在一个用不了的后端上：那样连「保存一台带密码的主机」
+/// 都会直接失败。钥匙串不可用时退回本地加密文件。
+pub fn default_backend() -> SecretBackend {
+    match platform_default_backend() {
+        SecretBackend::Vault => SecretBackend::Vault,
+        SecretBackend::Keyring => {
+            if keyring::probe() {
+                SecretBackend::Keyring
+            } else {
+                SecretBackend::Vault
+            }
+        }
+    }
+}
+
 /// 凭据存储门面：对外只暴露 set / get / delete，内部按偏好分派。
 pub struct SecretStore {
     dir: PathBuf,
+    /// 该平台的默认后端，算一次就够（探测钥匙串有副作用）。
+    default: OnceLock<SecretBackend>,
 }
 
 impl SecretStore {
     pub fn new(dir: &Path) -> Self {
         Self {
             dir: dir.to_path_buf(),
+            default: OnceLock::new(),
         }
+    }
+
+    /// 实际默认后端（带缓存）。
+    pub fn default_backend(&self) -> SecretBackend {
+        *self.default.get_or_init(default_backend)
     }
 
     fn pref_path(&self) -> PathBuf {
@@ -85,11 +112,11 @@ impl SecretStore {
     /// 当前后端。偏好文件缺失或损坏时回落到默认后端。
     pub fn backend(&self) -> SecretBackend {
         let Ok(raw) = std::fs::read(self.pref_path()) else {
-            return default_backend();
+            return self.default_backend();
         };
         serde_json::from_slice::<PrefFile>(&raw)
             .map(|p| p.backend)
-            .unwrap_or_else(|_| default_backend())
+            .unwrap_or_else(|_| self.default_backend())
     }
 
     /// 切换后端，并把已有秘密搬过去。
@@ -261,7 +288,7 @@ mod tests {
     fn missing_preference_falls_back_to_default() {
         let dir = temp_dir("default");
         let store = SecretStore::new(&dir);
-        assert_eq!(store.backend(), default_backend());
+        assert_eq!(store.backend(), store.default_backend());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -270,7 +297,7 @@ mod tests {
         let dir = temp_dir("broken");
         std::fs::write(dir.join(PREF_FILE), b"{ not json").unwrap();
         let store = SecretStore::new(&dir);
-        assert_eq!(store.backend(), default_backend());
+        assert_eq!(store.backend(), store.default_backend());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -282,7 +309,7 @@ mod tests {
         // 首次运行：偏好文件被写出来，内容就是当前后端。
         store.ensure_backend().unwrap();
         assert!(dir.join(PREF_FILE).exists(), "偏好文件应该被写出来");
-        assert_eq!(store.backend(), default_backend());
+        assert_eq!(store.backend(), store.default_backend());
 
         // 再调一次不会覆盖已有选择。
         store.write_backend(SecretBackend::Keyring).unwrap();
@@ -323,5 +350,26 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 默认后端必须是「能用的那个」。
+    ///
+    /// macOS 上一律是本地加密文件；其它平台上钥匙串不可用时（Linux 上没装
+    /// Secret Service）也必须退回本地加密文件 —— 否则「保存一台带密码的
+    /// 主机」会直接失败，用户什么都存不了。
+    #[test]
+    fn default_backend_is_always_a_usable_one() {
+        if cfg!(target_os = "macos") {
+            assert_eq!(platform_default_backend(), SecretBackend::Vault);
+        }
+
+        let default = default_backend();
+        if !keyring::probe() {
+            assert_eq!(
+                default,
+                SecretBackend::Vault,
+                "钥匙串不可用时默认后端必须是本地加密文件"
+            );
+        }
     }
 }

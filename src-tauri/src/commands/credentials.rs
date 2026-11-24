@@ -5,7 +5,7 @@ use tauri::State;
 use crate::commands::AppState;
 use crate::error::{AppError, AppResult};
 use crate::storage::keyring;
-use crate::storage::secrets::{default_backend, SecretBackend, SecretStore};
+use crate::storage::secrets::{SecretBackend, SecretStore};
 
 /// 凭据存储信息（前端展示用）。
 #[derive(Debug, Clone, serde::Serialize)]
@@ -25,12 +25,13 @@ pub struct CredentialStoreInfo {
 
 fn store_info(state: &AppState) -> CredentialStoreInfo {
     let backend = state.secrets.backend();
+    let default = state.secrets.default_backend();
     CredentialStoreInfo {
         backend: backend.as_str().to_string(),
         backend_label: backend.label().to_string(),
         keyring_available: SecretStore::keyring_available(),
-        is_default: backend == default_backend(),
-        default_backend: default_backend().as_str().to_string(),
+        is_default: backend == default,
+        default_backend: default.as_str().to_string(),
     }
 }
 
