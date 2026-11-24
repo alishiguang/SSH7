@@ -91,6 +91,49 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   }
 }
 
+/**
+ * 本窗口的标签。
+ *
+ * 多窗口下事件必须**定向**投递 —— Rust 侧发的是 `EventTarget::Window{label}`，
+ * 只有用**同一个 label** 注册的监听器才收得到（JS `listen` 默认注册成
+ * `Any`，那种监听器收不到定向事件）。所以监听时必须把这个标签带上。
+ *
+ * 取不到就退回到不指定 target（浏览器预览环境）：那边没有多窗口，
+ * 收不收得到都一样。
+ */
+let windowLabelPromise: Promise<string | undefined> | null = null
+
+function currentWindowLabel(): Promise<string | undefined> {
+  if (!windowLabelPromise) {
+    windowLabelPromise = (async () => {
+      if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+        return undefined
+      }
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        return getCurrentWindow().label
+      } catch {
+        return undefined
+      }
+    })()
+  }
+  return windowLabelPromise
+}
+
+/**
+ * 带窗口标签的 `listen` —— 定向投递的前提。
+ *
+ * 注意时序：调用方必须等它 resolve 之后再去请求 Rust 补发数据，
+ * 否则首批输出会在监听器就位之前送走。
+ */
+async function listenTo<T>(
+  event: string,
+  cb: (payload: T) => void,
+): Promise<UnlistenFn> {
+  const label = await currentWindowLabel()
+  return listen<T>(event, (e) => cb(e.payload), label ? { target: label } : undefined)
+}
+
 /* ── 主机 ───────────────────────────────────────────── */
 
 export const hostApi = {
@@ -193,16 +236,16 @@ export interface FocusSessionEvent {
 
 export const events = {
   onData: (cb: (e: SessionDataEvent) => void): Promise<UnlistenFn> =>
-    listen<SessionDataEvent>(EVENT.data, (e) => cb(e.payload)),
+    listenTo<SessionDataEvent>(EVENT.data, cb),
   onClosed: (cb: (e: SessionClosedEvent) => void): Promise<UnlistenFn> =>
-    listen<SessionClosedEvent>(EVENT.closed, (e) => cb(e.payload)),
+    listenTo<SessionClosedEvent>(EVENT.closed, cb),
   onCwd: (cb: (e: SessionCwdEvent) => void): Promise<UnlistenFn> =>
-    listen<SessionCwdEvent>(EVENT.cwd, (e) => cb(e.payload)),
+    listenTo<SessionCwdEvent>(EVENT.cwd, cb),
   onError: (cb: (e: SessionErrorEvent) => void): Promise<UnlistenFn> =>
-    listen<SessionErrorEvent>(EVENT.error, (e) => cb(e.payload)),
+    listenTo<SessionErrorEvent>(EVENT.error, cb),
   onTransfer: (cb: (e: TransferProgress) => void): Promise<UnlistenFn> =>
-    listen<TransferProgress>(EVENT.transfer, (e) => cb(e.payload)),
+    listenTo<TransferProgress>(EVENT.transfer, cb),
   /** 「定位到那扇窗」—— 被聚焦的窗口据此切到对应标签。 */
   onFocusSession: (cb: (e: FocusSessionEvent) => void): Promise<UnlistenFn> =>
-    listen<FocusSessionEvent>(EVENT.focusSession, (e) => cb(e.payload)),
+    listenTo<FocusSessionEvent>(EVENT.focusSession, cb),
 }
