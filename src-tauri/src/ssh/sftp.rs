@@ -218,6 +218,17 @@ impl SftpClient {
                 .await
                 .map_err(|e| crate::error::map_ssh_error(&e))?
         };
+
+        // 关键一步：必须先请求 `sftp` 子系统。
+        //
+        // 少了这一行，sshd 会把这个 channel 当成普通 shell —— 我们发出的
+        // SSH_FXP_INIT 会被 shell 当成用户输入吞掉，SFTP 握手永远等不到回应，
+        // 表现为「文件面板读目录超时 / 内部错误」。
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| crate::error::map_ssh_error(&e))?;
+
         let stream = channel.into_stream();
         let session = SftpSession::new(stream)
             .await
@@ -266,7 +277,7 @@ impl SftpClient {
     ///
     /// SFTP 协议要求绝对路径，前端在拿不到远端工作目录时会传 `"."`，
     /// 这里问一次服务器把它换成真实的主目录。
-    async fn resolve_remote_dir(&self, dir: &str) -> String {
+    pub async fn resolve_remote_dir(&self, dir: &str) -> String {
         if dir != "." && !dir.is_empty() {
             return dir.to_string();
         }
@@ -276,30 +287,22 @@ impl SftpClient {
         }
     }
 
-    /// 上传本地文件或目录到远端目录。返回远端根路径。
+    /// 把一份上传计划落到远端：先建目录结构，再逐个写文件。
     ///
-    /// 目录会**递归上传**：远端目录结构一并创建，符号链接跳过（避免成环）。
-    /// 进度按整个上传的累计字节计算，因此界面上只有一条进度条。
-    pub async fn upload(
+    /// 进度通过回调上报（文件名、已传字节、总字节）。
+    /// 这里刻意不依赖 `tauri::AppHandle` —— 逻辑与 UI 解耦后，
+    /// 同一段代码可以在真实服务器上做端到端测试。
+    pub async fn apply_plan(
         &self,
-        local_path: &str,
+        plan: &UploadPlan,
         remote_dir: &str,
-        transfer_id: &str,
-        session_id: &str,
-        app: &tauri::AppHandle,
-    ) -> AppResult<String> {
-        let root = Path::new(local_path);
-        let plan = plan_upload(root)?;
-        let root_name = root
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        mut on_progress: impl FnMut(&str, u64, u64),
+    ) -> AppResult<()> {
+        // 目标目录本身可能还不存在（例如用户手工输入了一个新路径），先建出来。
+        // 已存在时 create_dir 会报错，忽略即可。
+        let _ = self.session.create_dir(remote_dir).await;
 
-        // 目标目录可能是 "."，先解析成绝对路径。
-        let remote_dir = self.resolve_remote_dir(remote_dir).await;
-        let remote_dir = remote_dir.as_str();
-
-        // 先把远端目录结构建出来（已存在时忽略错误）。
+        // 再把远端目录结构建出来（已存在时忽略错误）。
         for dir in &plan.dirs {
             let remote = join_remote(remote_dir, dir);
             let _ = self.session.create_dir(remote.as_str()).await;
@@ -307,17 +310,10 @@ impl SftpClient {
 
         let mut transferred: u64 = 0;
         let mut last_emit = Instant::now() - PROGRESS_INTERVAL;
-        let mut current_name = root_name.clone();
+        let mut current_name = String::new();
 
         // 首个事件：界面立刻出现这条传输记录。
-        emit_upload_progress(
-            app,
-            transfer_id,
-            session_id,
-            &current_name,
-            transferred,
-            plan.total,
-        );
+        on_progress(&current_name, transferred, plan.total);
 
         for file in &plan.files {
             current_name = file.relative.clone();
@@ -342,14 +338,7 @@ impl SftpClient {
 
                 if last_emit.elapsed() >= PROGRESS_INTERVAL {
                     last_emit = Instant::now();
-                    emit_upload_progress(
-                        app,
-                        transfer_id,
-                        session_id,
-                        &current_name,
-                        transferred,
-                        plan.total,
-                    );
+                    on_progress(&current_name, transferred, plan.total);
                 }
             }
 
@@ -358,16 +347,38 @@ impl SftpClient {
         }
 
         // 收尾：保证界面收到 100%。
-        emit_upload_progress(
-            app,
-            transfer_id,
-            session_id,
-            &current_name,
-            plan.total,
-            plan.total,
-        );
+        on_progress(&current_name, plan.total, plan.total);
+        Ok(())
+    }
 
-        Ok(join_remote(remote_dir, &root_name))
+    /// 上传本地文件或目录到远端目录。返回远端根路径。
+    ///
+    /// 目录会**递归上传**：远端目录结构一并创建，符号链接跳过（避免成环）。
+    /// 进度按整个上传的累计字节计算，因此界面上只有一条进度条。
+    pub async fn upload(
+        &self,
+        local_path: &str,
+        remote_dir: &str,
+        transfer_id: &str,
+        session_id: &str,
+        app: &tauri::AppHandle,
+    ) -> AppResult<String> {
+        let root = Path::new(local_path);
+        let plan = plan_upload(root)?;
+        let root_name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        // 目标目录可能是 "."，先解析成绝对路径。
+        let remote_dir = self.resolve_remote_dir(remote_dir).await;
+
+        self.apply_plan(&plan, &remote_dir, |name, transferred, total| {
+            emit_upload_progress(app, transfer_id, session_id, name, transferred, total);
+        })
+        .await?;
+
+        Ok(join_remote(&remote_dir, &root_name))
     }
 
     /// 下载远端文件到本地目录。返回本地完整路径。
@@ -378,6 +389,40 @@ impl SftpClient {
         transfer_id: &str,
         session_id: &str,
         app: &tauri::AppHandle,
+    ) -> AppResult<String> {
+        self.download_to(remote_path, local_dir, |file_name, transferred, total| {
+            let percent = if total == 0 {
+                100
+            } else {
+                ((transferred as f64 / total as f64) * 100.0)
+                    .round()
+                    .clamp(0.0, 100.0) as u8
+            };
+            crate::ssh::client::emit_transfer_progress(
+                app,
+                TransferProgress {
+                    transfer_id: transfer_id.to_string(),
+                    session_id: session_id.to_string(),
+                    file_name: file_name.to_string(),
+                    transferred,
+                    total,
+                    percent,
+                    direction: TransferDirection::Download,
+                },
+            );
+        })
+        .await
+    }
+
+    /// 下载远端文件到本地目录，进度通过回调上报。
+    ///
+    /// 与 [`Self::apply_plan`] 一样不依赖 `tauri::AppHandle`，
+    /// 这样下载路径也能在真实服务器上做端到端测试。
+    pub async fn download_to(
+        &self,
+        remote_path: &str,
+        local_dir: &str,
+        mut on_progress: impl FnMut(&str, u64, u64),
     ) -> AppResult<String> {
         let file_name = std::path::Path::new(remote_path)
             .file_name()
@@ -410,27 +455,7 @@ impl SftpClient {
             }
             local.write_all(&buf[..n]).await?;
             transferred += n as u64;
-
-            let percent = if total == 0 {
-                100
-            } else {
-                ((transferred as f64 / total as f64) * 100.0)
-                    .round()
-                    .clamp(0.0, 100.0) as u8
-            };
-
-            crate::ssh::client::emit_transfer_progress(
-                app,
-                TransferProgress {
-                    transfer_id: transfer_id.to_string(),
-                    session_id: session_id.to_string(),
-                    file_name: file_name.clone(),
-                    transferred,
-                    total,
-                    percent,
-                    direction: TransferDirection::Download,
-                },
-            );
+            on_progress(&file_name, transferred, total);
         }
 
         local.flush().await.ok();
@@ -440,35 +465,56 @@ impl SftpClient {
     /// 删除远端路径。`recursive` 为真时递归删除目录内容。
     ///
     /// 用显式栈代替递归，避免 async fn 递归装箱。
+    ///
+    /// 必须是**后序遍历**：先把子项删干净，再删目录本身。
+    /// 早先用普通栈（先进后出）会在子项还在时就删目录，
+    /// 服务器一律回 "Directory not empty"，递归删除因此从来没成功过。
     pub async fn remove(&self, path: &str, recursive: bool) -> AppResult<()> {
-        let mut stack = vec![path.to_string()];
-        while let Some(current) = stack.pop() {
+        // (路径, 是否已经展开过子项)
+        let mut stack = vec![(path.to_string(), false)];
+        while let Some((current, expanded)) = stack.pop() {
             let meta = self
                 .session
                 .symlink_metadata(current.as_str())
                 .await
                 .map_err(|e| map_sftp_error(&e))?;
 
-            if meta.is_dir() {
-                if recursive {
-                    let dir = self
-                        .session
-                        .read_dir(current.as_str())
-                        .await
-                        .map_err(|e| map_sftp_error(&e))?;
-                    for entry in dir {
-                        stack.push(entry.path());
-                    }
-                }
-                self.session
-                    .remove_dir(current.as_str())
-                    .await
-                    .map_err(|e| map_sftp_error(&e))?;
-            } else {
+            if !meta.is_dir() {
+                // 文件与符号链接：直接删（符号链接删的是链接本身，不动目标）。
                 self.session
                     .remove_file(current.as_str())
                     .await
                     .map_err(|e| map_sftp_error(&e))?;
+                continue;
+            }
+
+            if !recursive {
+                self.session
+                    .remove_dir(current.as_str())
+                    .await
+                    .map_err(|e| map_sftp_error(&e))?;
+                continue;
+            }
+
+            if expanded {
+                // 子项已经删干净，现在可以删目录本身。
+                self.session
+                    .remove_dir(current.as_str())
+                    .await
+                    .map_err(|e| map_sftp_error(&e))?;
+                continue;
+            }
+
+            // 先展开子项；当前目录标记为「待删」压回栈底，
+            // 等所有子项处理完才会轮到它 —— 这就是后序遍历。
+            let dir = self
+                .session
+                .read_dir(current.as_str())
+                .await
+                .map_err(|e| map_sftp_error(&e))?;
+            stack.push((current.clone(), true));
+            for entry in dir {
+                stack.push((entry.path(), false));
             }
         }
         Ok(())
