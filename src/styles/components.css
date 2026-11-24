@@ -759,6 +759,22 @@
   font-style: normal;
   font-size: calc(7px * var(--ui-scale));
 }
+/* 仓库地址：和其他 meta 一样安静，悬停才亮红。独占一行，免得行尾吊一个 ◆。 */
+.empty-meta-link {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex-basis: 100%;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+.empty-meta-link:hover {
+  color: var(--red);
+}
 
 /* ── 跑马灯 ───────────────────────────────── */
 
@@ -1428,4 +1444,20 @@
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
   line-height: 1.5;
+}
+/* 仓库地址：与正文同色，悬停才亮红 —— 存在感要低，但可点。 */
+.settings-foot-link {
+  font: inherit;
+  color: var(--cream-2);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.settings-foot-link:hover {
+  color: var(--red);
+  border-color: var(--red);
 }

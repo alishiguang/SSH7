@@ -26,6 +26,30 @@ import type {
   TransferProgress,
 } from './types'
 
+/** SSH7 的公开仓库地址。 */
+export const REPO_URL = 'https://github.com/alishiguang/SSH7'
+
+/**
+ * 用系统默认浏览器打开外部链接。
+ *
+ * Tauri 里走 `opener` 插件；浏览器预览（`dev-mock.html`）下退化成新窗口，
+ * 免得在纯前端环境里直接报错。
+ */
+export async function openExternal(url: string): Promise<void> {
+  const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  if (!inTauri) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url)
+  } catch {
+    // 插件不可用时也别把链接变成死的，退化成新窗口。
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
 /** 归一化后的前端错误：携带 Rust 侧的结构化错误码。 */
 export class BridgeError extends Error {
   readonly code: string

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { credentialApi } from '../api/bridge'
+import { credentialApi, openExternal, REPO_URL } from '../api/bridge'
 import type { CredentialBackend, CredentialStoreInfo } from '../api/types'
 import {
   TERMINAL_FONT_DEFAULT,
@@ -209,7 +209,16 @@ export default function SettingsPanel({ onClose }: Props) {
         </div>
       </div>
 
-      <div className="settings-foot">完整功能说明见仓库 docs/使用手册.md</div>
+      <div className="settings-foot">
+        完整功能说明见仓库{' '}
+        <button
+          className="settings-foot-link"
+          onClick={() => void openExternal(REPO_URL)}
+          title={REPO_URL}
+        >
+          {REPO_URL}
+        </button>
+      </div>
     </div>
   )
 }

@@ -129,6 +129,11 @@
               case 'sftp_pick_directory':
               case 'sftp_pick_upload_folder':
                 return null
+              case 'plugin:opener|open_url': {
+                // 浏览器预览里没有系统 opener，模拟成新窗口打开。
+                window.open(args && args.url, '_blank', 'noopener,noreferrer')
+                return null
+              }
               default:
                 return null
             }

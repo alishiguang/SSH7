@@ -47,6 +47,7 @@ url = "2"
 dirs = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tauri-plugin-opener = "2"
 
 [features]
 default = ["custom-protocol"]

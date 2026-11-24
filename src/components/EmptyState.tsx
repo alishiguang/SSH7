@@ -1,3 +1,4 @@
+import { openExternal, REPO_URL } from '../api/bridge'
 import { Icon } from './Icons'
 
 /**
@@ -37,18 +38,18 @@ export default function EmptyState({
       <div className="empty-inner">
         <div className="empty-tag">
           <span className="empty-tag-line" />
-          CONSIDER IT CONNECTED
+          LESS IS MORE
         </div>
 
         <h1 className="empty-title display">
-          想到，就能
-          <span className="empty-title-accent">连上</span>
+          少，就是
+          <span className="empty-title-accent">多</span>
           。
         </h1>
 
         <p className="empty-lead">
-          SSH7 用 Rust 重写的 SSH 客户端。SSH 与 SFTP 全部在原生侧完成，
-          多会话终端、文件管理与拖拽传输，一个窗口搞定。
+          只做两件事：连接，与传文件。终端和 SFTP 全部由 Rust 写就 ——
+          没有 Node.js，没有 Chromium，安装包 6 MB 上下。
         </p>
 
         <div className="empty-actions">
@@ -73,6 +74,13 @@ export default function EmptyState({
           <span>MACOS · WINDOWS · LINUX</span>
           <em>◆</em>
           <span>MIT LICENSE</span>
+          <button
+            className="empty-meta-link"
+            onClick={() => void openExternal(REPO_URL)}
+            title={REPO_URL}
+          >
+            GITHUB.COM/ALISHIGUANG/SSH7
+          </button>
         </div>
       </div>
 
