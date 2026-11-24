@@ -1,7 +1,7 @@
 {
   "name": "ssh7",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "type": "module",
   "description": "SSH7 — 简洁酷炫的跨平台 SSH 客户端",
   "license": "MIT",
