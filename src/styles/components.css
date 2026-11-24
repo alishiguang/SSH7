@@ -706,31 +706,21 @@
   background: var(--red);
 }
 
-.empty-title {
-  font-size: clamp(2.6rem, 6.5vw, 4.4rem);
-  color: var(--cream);
-  margin-bottom: 20px;
-  letter-spacing: 0.01em;
-}
-.empty-title-accent {
-  color: var(--red);
-}
-
 /* 欢迎屏的引文：文言用衬线，跟黑体正文拉开气质 */
 .empty-poem {
-  margin-bottom: 30px;
+  margin-bottom: 38px;
 }
 .empty-poem-head {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 18px;
 }
 .empty-poem-title {
   font-family: var(--font-serif);
-  font-size: calc(15px * var(--ui-scale));
-  letter-spacing: 0.16em;
-  color: var(--cream-2);
+  font-size: calc(21px * var(--ui-scale));
+  letter-spacing: 0.18em;
+  color: var(--cream);
 }
 .empty-poem-author {
   font-family: var(--font-mono);
@@ -738,36 +728,23 @@
   letter-spacing: 0.18em;
   color: var(--cream-3);
 }
+/* 四栏：一行两联，左起依次是上联、下联 */
 .empty-poem-body {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  justify-content: start;
+  column-gap: 1.8em;
+  row-gap: 0.5em;
   font-family: var(--font-serif);
-  font-size: calc(16px * var(--ui-scale));
-  line-height: 1.85;
-  letter-spacing: 0.1em;
+  /* 横幅排布宽度有限：跟着界面缩放走，但不许宽到一行放不下 */
+  font-size: min(calc(16px * var(--ui-scale)), 1.3vw);
+  line-height: 1.7;
+  letter-spacing: 0.08em;
   color: var(--cream);
 }
 /* 点睛：诗里表示「少」与「多」的词，仿古籍的朱点 */
 .empty-poem-body .mark {
   color: var(--red);
-}
-
-/* 窗口不够高时收一收 —— .empty 是 overflow:hidden，诗被裁掉就难看了 */
-@media (max-height: 660px) {
-  .empty-inner {
-    padding-bottom: 26px;
-  }
-  .empty-title {
-    font-size: clamp(2.2rem, 5vw, 3.2rem);
-  }
-  .empty-poem {
-    margin-bottom: 20px;
-  }
-  .empty-poem-body {
-    font-size: calc(14px * var(--ui-scale));
-    line-height: 1.65;
-  }
-  .empty-meta {
-    padding-top: 12px;
-  }
 }
 
 .empty-actions {

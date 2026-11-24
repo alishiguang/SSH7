@@ -41,34 +41,21 @@ export default function EmptyState({
           LESS IS MORE
         </div>
 
-        <h1 className="empty-title display">
-          少，就是
-          <span className="empty-title-accent">多</span>
-          。
-        </h1>
-
         <div className="empty-poem">
           <div className="empty-poem-head">
             <span className="empty-poem-title">无长物</span>
             <span className="empty-poem-author">白居易</span>
           </div>
-          <p className="empty-poem-body">
-            莫讶家居<span className="mark">窄</span>，
-            <br />
-            无嫌活计<span className="mark">贫</span>。
-            <br />
-            只缘<span className="mark">无长物</span>，
-            <br />
-            始得作闲人。
-            <br />
-            青竹<span className="mark">单</span>床簟，
-            <br />
-            乌纱<span className="mark">独</span>幅巾。
-            <br />
-            其馀<span className="mark">皆</span>称是，
-            <br />
-            亦<span className="mark">足</span>奉吾身。
-          </p>
+          <div className="empty-poem-body">
+            <span>莫讶家居<span className="mark">窄</span>，</span>
+            <span>无嫌活计<span className="mark">贫</span>。</span>
+            <span>只缘<span className="mark">无长物</span>，</span>
+            <span>始得作闲人。</span>
+            <span>青竹<span className="mark">单</span>床簟，</span>
+            <span>乌纱<span className="mark">独</span>幅巾。</span>
+            <span>其馀<span className="mark">皆</span>称是，</span>
+            <span>亦<span className="mark">足</span>奉吾身。</span>
+          </div>
         </div>
 
         <div className="empty-actions">
