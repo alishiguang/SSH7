@@ -19,6 +19,14 @@
       不用抢在 toast 消失前截图。
     -->
     <div id="mock-open" style="position: fixed; left: -9999px"></div>
+    <!-- 最近一次 listen 注册时带的 target（定向投递的钥匙）。 -->
+    <div id="mock-listen-target" style="position: fixed; left: -9999px"></div>
+    <!-- 最近一次 emit 实际送达了几个监听器。 -->
+    <div id="mock-emit-count" style="position: fixed; left: -9999px"></div>
+    <!-- 每个事件注册监听时带的 target。 -->
+    <div id="mock-listen-targets" style="position: fixed; left: -9999px"></div>
+    <!-- ?selftest=1 的自检结论。 -->
+    <div id="mock-selftest" style="position: fixed; left: -9999px"></div>
 
     <!--
       仅用于**前端 UI 开发**：用一套假的 Tauri IPC 响应把界面跑起来，
@@ -92,24 +100,54 @@
           }
         }
 
-        // 事件监听表：event -> handler id 列表。
+        // 事件监听表：event -> [{ id, target }]。
         // 真机上这些事件由 Rust 侧 emit 过来，这里做成可手动触发的。
+        //
+        // **target 要当真**：真机的多窗口靠「事件定向投递」实现 ——
+        // Rust 发给 EventTarget::Window{label}，只有用同一个 label
+        // 注册的监听器才收得到。mock 必须复现这条规则，否则这类
+        // 「连上了却收不到输出」的 bug 在浏览器里根本测不出来。
         var eventHandlers = {}
 
+        // 模拟的窗口标签。真机上由 Tauri 注入。
+        var MOCK_WINDOW_LABEL = 'mock-main'
+
+        /** 取出 target 里的窗口标签 —— target 可能是字符串，也可能是对象。 */
+        function targetLabel(t) {
+          if (!t) return null
+          if (typeof t === 'string') return t
+          return t.label || null
+        }
+
+        /** 每个事件最近一次注册时带的 target（用于断言「定向投递」）。 */
+        var listenTargets = {}
+
         window.__TAURI_INTERNALS__ = {
+          // `getCurrentWindow()` 靠它拿到本窗口的标签 ——
+          // 前端要拿这个标签去注册定向监听。
+          metadata: { currentWindow: { label: MOCK_WINDOW_LABEL } },
           invoke: async function (cmd, args) {
             switch (cmd) {
               case 'plugin:event|listen': {
                 var a = args || {}
                 var hid = a.handler
-                ;(eventHandlers[a.event] = eventHandlers[a.event] || []).push(hid)
+                ;(eventHandlers[a.event] = eventHandlers[a.event] || []).push({
+                  id: hid,
+                  // 没给 target 相当于「收所有」（真机上就是 EventTarget::Any）
+                  target: a.target || null,
+                })
+                listenTargets[a.event] = a.target || null
+                var note = document.getElementById('mock-listen-targets')
+                if (note) note.textContent = JSON.stringify(listenTargets)
                 return hid
               }
               case 'plugin:event|unlisten': {
                 var u = args || {}
                 var list = eventHandlers[u.event]
                 if (list) {
-                  var i = list.indexOf(u.eventId)
+                  var i = list.findIndex(function (h) {
+                    return h.id === u.eventId
+                  })
                   if (i >= 0) list.splice(i, 1)
                 }
                 return null
@@ -349,16 +387,55 @@
         /**
          * 手动触发一个事件 —— 模拟 Rust 侧发来的通知。
          *
+         * `toLabel` 是**收件窗口**：只有 target 为空（收所有）或
+         * 与它一致的监听器才会收到 —— 和真机的定向投递一个规矩。
+         *
          * 比如终端里 `cd` 之后 OSC 7 上报的目录变化：
          *   __mockEmit('session://cwd', { sessionId: 's1', cwd: '/var/log' })
          */
-        window.__mockEmit = function (event, payload) {
-          var ids = (eventHandlers[event] || []).slice()
-          ids.forEach(function (id) {
-            var cb = window['_' + id]
-            if (cb) cb({ event: event, id: id, payload: payload })
+        window.__mockEmit = function (event, payload, toLabel) {
+          var handlers = eventHandlers[event] || []
+          var delivered = 0
+          handlers.forEach(function (h) {
+            // 定向投递：target 不为空时，窗口标签对不上就收不到。
+            var tLabel = targetLabel(h.target)
+            if (tLabel && toLabel && tLabel !== toLabel) return
+            var cb = window['_' + h.id]
+            if (cb) {
+              cb({ event: event, id: h.id, payload: payload })
+              delivered++
+            }
           })
-          return ids.length
+          var note = document.getElementById('mock-emit-count')
+          if (note) note.textContent = String(delivered)
+          return delivered
+        }
+
+        /**
+         * ?selftest=1 —— 自检「定向投递」这条规则。
+         *
+         * 真机上 Rust 发 `EventTarget::Window{label}`，只有注册了同一个
+         * label 的监听器才收得到；JS 侧若忘了带 target（注册成 Any），
+         * 就会出现「连上了却收不到任何输出」的怪事 —— 正是这么翻的车。
+         *
+         * 这里模拟一遍：发给自己应当送达，发给别的窗口应当收不到。
+         */
+        if (location.search.indexOf('selftest=1') >= 0) {
+          window.addEventListener('load', function () {
+            setTimeout(function () {
+              var payload = { sessionId: 's1', cwd: '/var/log' }
+              var right = window.__mockEmit('session://cwd', payload, MOCK_WINDOW_LABEL)
+              var wrong = window.__mockEmit('session://cwd', payload, 'other-window')
+              var out = document.getElementById('mock-selftest')
+              if (out) {
+                out.textContent = JSON.stringify({
+                  listenTarget: listenTargets['session://cwd'] || null,
+                  toSelf: right,
+                  toOther: wrong,
+                })
+              }
+            }, 1500)
+          })
         }
       })()
     </script>
