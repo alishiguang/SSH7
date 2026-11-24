@@ -262,6 +262,20 @@ impl SftpClient {
             .map_err(|e| map_sftp_error(&e))
     }
 
+    /// 把可能为相对路径的目标目录解析成绝对路径。
+    ///
+    /// SFTP 协议要求绝对路径，前端在拿不到远端工作目录时会传 `"."`，
+    /// 这里问一次服务器把它换成真实的主目录。
+    async fn resolve_remote_dir(&self, dir: &str) -> String {
+        if dir != "." && !dir.is_empty() {
+            return dir.to_string();
+        }
+        match self.session.canonicalize(".").await {
+            Ok(p) if !p.is_empty() => p,
+            _ => "/".to_string(),
+        }
+    }
+
     /// 上传本地文件或目录到远端目录。返回远端根路径。
     ///
     /// 目录会**递归上传**：远端目录结构一并创建，符号链接跳过（避免成环）。
@@ -280,6 +294,10 @@ impl SftpClient {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
+
+        // 目标目录可能是 "."，先解析成绝对路径。
+        let remote_dir = self.resolve_remote_dir(remote_dir).await;
+        let remote_dir = remote_dir.as_str();
 
         // 先把远端目录结构建出来（已存在时忽略错误）。
         for dir in &plan.dirs {
