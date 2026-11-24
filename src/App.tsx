@@ -53,6 +53,11 @@ export default function App() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<SavedHost | null>(null)
+  /**
+   * 新建连接时指定落地的分组（从分组右键进来的）。
+   * null = 不指定 —— 按「当前选中的主机所在的分组」算（见 D19）。
+   */
+  const [newConnGroup, setNewConnGroup] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 待确认的删除操作。null 表示没有。
@@ -369,6 +374,30 @@ export default function App() {
     hostId: string
   } | null>(null)
 
+  /* ── 分组右键菜单 ───────────────────────────────── */
+  const [groupMenu, setGroupMenu] = useState<{
+    x: number
+    y: number
+    name: string
+  } | null>(null)
+
+  const groupMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (!groupMenu) return []
+    return [
+      {
+        id: 'connect',
+        label: '新建连接',
+        icon: 'plus',
+        onSelect: () => {
+          // 从这个分组右键进来的 —— 新建连接默认就落在这个分组。
+          setNewConnGroup(groupMenu.name)
+          setEditingHost(null)
+          setDialogOpen(true)
+        },
+      },
+    ]
+  }, [groupMenu])
+
   const hostMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!hostMenu) return []
     const h = hosts.find((x) => x.id === hostMenu.hostId)
@@ -449,6 +478,8 @@ export default function App() {
         <Sidebar
           onConnect={() => {
             setEditingHost(null)
+            // 从工具栏新建 —— 不指定分组，按当前选中的主机算。
+            setNewConnGroup(null)
             setDialogOpen(true)
           }}
           onOpenNewSession={(host) => void openHostSession(host)}
@@ -457,6 +488,7 @@ export default function App() {
             setDialogOpen(true)
           }}
           onHostMenu={(host, x, y) => setHostMenu({ hostId: host.id, x, y })}
+          onGroupMenu={(name, x, y) => setGroupMenu({ name, x, y })}
           askConfirm={askConfirm}
         />
 
@@ -547,13 +579,16 @@ export default function App() {
         <ConnectDialog
           // key 变了就重新挂载 —— 表单初值（尤其是默认分组）重新算一遍，
           // 不会把用户已经打过字的字段冲掉。
-          key={editingHost?.id ?? 'new'}
+          // 新建时把分组也算进 key：从不同分组右键进来，落地分组才不一样。
+          key={editingHost?.id ?? `new-${newConnGroup ?? ''}`}
           editHost={editingHost}
+          initialGroup={newConnGroup ?? undefined}
           onSubmit={handleConnect}
           onSaveOnly={handleSaveOnly}
           onClose={() => {
             setDialogOpen(false)
             setEditingHost(null)
+            setNewConnGroup(null)
           }}
         />
       )}
@@ -573,6 +608,15 @@ export default function App() {
           y={hostMenu.y}
           items={hostMenuItems}
           onClose={() => setHostMenu(null)}
+        />
+      )}
+
+      {groupMenu && groupMenuItems.length > 0 && (
+        <ContextMenu
+          x={groupMenu.x}
+          y={groupMenu.y}
+          items={groupMenuItems}
+          onClose={() => setGroupMenu(null)}
         />
       )}
 

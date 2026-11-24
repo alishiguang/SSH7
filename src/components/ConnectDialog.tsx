@@ -10,6 +10,11 @@ import { Icon } from './Icons'
 interface Props {
   /** 非空表示编辑模式 */
   editHost?: SavedHost | null
+  /**
+   * 新建时指定落地的分组（从分组右键进来的）。
+   * undefined = 不指定 —— 按当前选中的主机所在分组算。
+   */
+  initialGroup?: string
   onSubmit: (req: ConnectRequest) => Promise<void>
   /** 「仅保存」：只写进主机列表，不建立连接。 */
   onSaveOnly: (payload: HostSaveRequest) => Promise<void>
@@ -42,7 +47,13 @@ const EMPTY: FormState = {
   save: true,
 }
 
-export default function ConnectDialog({ editHost, onSubmit, onSaveOnly, onClose }: Props) {
+export default function ConnectDialog({
+  editHost,
+  initialGroup,
+  onSubmit,
+  onSaveOnly,
+  onClose,
+}: Props) {
   const isEdit = !!editHost
   const [testing, setTesting] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -61,13 +72,19 @@ export default function ConnectDialog({ editHost, onSubmit, onSaveOnly, onClose 
     return [...set].sort()
   }, [groups])
 
-  /** 当前选中的那台机器在哪个分组 —— 新建连接时默认落在那儿。 */
+  /**
+   * 新建连接时默认落在哪个分组。
+   *
+   * 从分组右键进来的 —— 就落在那个分组。
+   * 否则取当前选中的那台机器所在的分组；没选中就是 HOSTS（未分组）。
+   */
   const selectedHostId = useUi((s) => s.selectedHostId)
   const allHosts = useHosts((s) => s.hosts)
   const defaultGroup = useMemo(() => {
+    if (!editHost && initialGroup !== undefined) return initialGroup.trim()
     const picked = allHosts.find((h) => h.id === selectedHostId)
     return (picked?.group ?? '').trim()
-  }, [allHosts, selectedHostId])
+  }, [allHosts, selectedHostId, editHost, initialGroup])
 
   /**
    * 表单初值只算一次。

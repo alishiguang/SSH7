@@ -14,6 +14,8 @@ interface Props {
   onEditHost: (host: SavedHost) => void
   /** 主机右键菜单。 */
   onHostMenu: (host: SavedHost, x: number, y: number) => void
+  /** 分组右键菜单。 */
+  onGroupMenu: (group: string, x: number, y: number) => void
   /** 删除前的二次确认。 */
   askConfirm: (spec: ConfirmSpec) => void
 }
@@ -35,6 +37,7 @@ export default function Sidebar({
   onOpenNewSession,
   onEditHost,
   onHostMenu,
+  onGroupMenu,
   askConfirm,
 }: Props) {
   const collapsed = useUi((s) => s.sidebarCollapsed)
@@ -497,10 +500,17 @@ export default function Sidebar({
                   }}
                   onMouseEnter={() => setHoverGroup(g.name)}
                   onMouseLeave={() => setHoverGroup(null)}
+                  onContextMenu={(e) => {
+                    // 未分组那一组没有「新连接落在哪个组」的概念 —— 不给菜单。
+                    if (!g.name) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onGroupMenu(g.name, e.clientX, e.clientY)
+                  }}
                   onPointerDown={(e) => {
                     if (g.name) startGroupDrag(e, g.name)
                   }}
-                  title={g.name ? '折叠 / 展开分组；拖动可调整顺序' : undefined}
+                  title={g.name ? '折叠 / 展开分组；拖动可调整顺序；右键可新建连接' : undefined}
                 >
                   <span className="sidebar-group-caret">
                     <Icon name="chevron-left" size={11} />
