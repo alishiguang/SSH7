@@ -1179,6 +1179,27 @@
   min-width: 0;
   display: flex;
 }
+/* 会话当前所在目录 —— 文件面板跟着它走 */
+.file-panel-cwd {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-meta);
+  color: var(--cream-3);
+}
+.file-panel-cwd .meta {
+  flex-shrink: 0;
+  color: var(--cream-3);
+}
+.file-cwd-path {
+  font-family: var(--font-mono);
+  color: var(--cream-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .file-list {
   flex: 1;

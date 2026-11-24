@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BridgeError, sftpApi } from '../api/bridge'
 import type { RemoteFile } from '../api/types'
 import { useDropZone } from '../hooks/useDropZone'
+import { useSessions } from '../store/sessions'
 import { useTransfers } from '../store/transfers'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
@@ -57,6 +58,16 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
   const startTransfer = useTransfers((s) => s.start)
   const finishTransfer = useTransfers((s) => s.finish)
 
+  /**
+   * 这个会话的远端工作目录 —— 由 OSC 7 跟踪得到。
+   *
+   * 文件面板跟着它走：打开就落在会话目录，终端里 `cd` 了也跟着换。
+   * 用户自己浏览到别处不会被拽回来 —— 只有会话目录**变了**才跟随。
+   */
+  const sessionCwd = useSessions((s) => s.sessions.find((x) => x.id === sessionId)?.cwd)
+  /** 浏览位置与会话目录不一致时，路径栏上给一个「跳回去」的入口。 */
+  const offSessionDir = !!sessionCwd && cwd !== sessionCwd
+
   const { ref: zoneRef, isOver, dropped } = useDropZone<HTMLDivElement>()
   const consumedRef = useRef<number>(-1)
 
@@ -88,10 +99,11 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
     [sessionId, reportError],
   )
 
-  // 切换会话时重新列举 —— 旧版依赖数组为空，切会话后仍显示上个会话的文件（缺陷 #8）
+  // 切换会话时重新列举 —— 旧版依赖数组为空，切会话后仍显示上个会话的文件（缺陷 #8）。
+  // 同时跟着会话的工作目录走：打开就落在会话目录，终端里 cd 了也跟着换。
   useEffect(() => {
-    void load('/')
-  }, [load])
+    void load(sessionCwd || '/')
+  }, [load, sessionCwd])
 
   /* ── 传输进度事件 ───────────────────────────── */
   useEffect(() => {
@@ -273,7 +285,23 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
             spellCheck={false}
           />
         </form>
+        {offSessionDir && (
+          <button
+            className="icon-btn"
+            onClick={() => void load(sessionCwd as string)}
+            title="回到会话所在目录"
+          >
+            <Icon name="terminal" size={13} />
+          </button>
+        )}
       </div>
+
+      {sessionCwd && (
+        <div className="file-panel-cwd">
+          <span className="meta">// SESSION CWD</span>
+          <span className="file-cwd-path">{sessionCwd}</span>
+        </div>
+      )}
 
       <div
         className={`file-list${isOver ? ' is-drop' : ''}`}

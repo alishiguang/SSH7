@@ -81,12 +81,28 @@
           }
         }
 
+        // 事件监听表：event -> handler id 列表。
+        // 真机上这些事件由 Rust 侧 emit 过来，这里做成可手动触发的。
+        var eventHandlers = {}
+
         window.__TAURI_INTERNALS__ = {
           invoke: async function (cmd, args) {
             switch (cmd) {
-              case 'plugin:event|listen':
-              case 'plugin:event|unlisten':
-                return 1
+              case 'plugin:event|listen': {
+                var a = args || {}
+                var hid = a.handler
+                ;(eventHandlers[a.event] = eventHandlers[a.event] || []).push(hid)
+                return hid
+              }
+              case 'plugin:event|unlisten': {
+                var u = args || {}
+                var list = eventHandlers[u.event]
+                if (list) {
+                  var i = list.indexOf(u.eventId)
+                  if (i >= 0) list.splice(i, 1)
+                }
+                return null
+              }
               case 'host_list':
                 return { hosts: hosts.slice(), groups: groups.slice() }
               case 'host_save': {
@@ -251,6 +267,21 @@
         // @tauri-apps/api 的事件模块用的是这个内部对象
         window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
           unregisterListener: async function () {},
+        }
+
+        /**
+         * 手动触发一个事件 —— 模拟 Rust 侧发来的通知。
+         *
+         * 比如终端里 `cd` 之后 OSC 7 上报的目录变化：
+         *   __mockEmit('session://cwd', { sessionId: 's1', cwd: '/var/log' })
+         */
+        window.__mockEmit = function (event, payload) {
+          var ids = (eventHandlers[event] || []).slice()
+          ids.forEach(function (id) {
+            var cb = window['_' + id]
+            if (cb) cb({ event: event, id: id, payload: payload })
+          })
+          return ids.length
         }
       })()
     </script>
