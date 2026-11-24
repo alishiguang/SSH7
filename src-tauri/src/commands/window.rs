@@ -175,15 +175,27 @@ pub async fn window_boot(
 
 /// 新建一扇窗口。外观与主窗口保持一致。
 fn build_host_window(app: &tauri::AppHandle, label: &str, title: &str) -> AppResult<()> {
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title(title)
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .min_inner_size(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
         .resizable(true)
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
         .theme(Some(tauri::Theme::Dark))
-        .background_color(tauri::window::Color(0x08, 0x08, 0x0a, 0xff))
+        .background_color(tauri::window::Color(0x08, 0x08, 0x0a, 0xff));
+
+    // 标题栏样式是 macOS 独有的能力（Tauri 把它标了 `#[cfg(target_os = "macos")]`），
+    // 在别的平台上这两个方法根本不存在 —— 直接调用会编译不过。
+    // 所以这里按平台分支：macOS 继续用「内容延伸到标题栏」的沉浸式外观，
+    // 其它平台用系统默认标题栏。
+    //
+    // 用重新绑定（而不是 `mut`）来加锁，这样在非 macOS 平台上
+    // 不会留下「声明了 mut 却没改过」的多余警告。
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    builder
         .build()
         .map(|_| ())
         .map_err(|e| AppError::Internal(format!("创建新窗口失败: {e}")))
