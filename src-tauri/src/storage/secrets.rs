@@ -121,7 +121,10 @@ impl SecretStore {
             return Ok(());
         }
         for account in accounts {
-            let Some(secret) = self.read_from(from, account)? else {
+            // 源后端读不出来时（钥匙串不可用、没授权）跳过这一条 ——
+            // 读不到就没有东西可搬，不该让整个切换失败。
+            // 目标后端写不进去则要报错：那说明用户选了一个用不了的后端。
+            let Some(secret) = self.read_optional_from(from, account) else {
                 continue;
             };
             self.write_to(to, account, &secret)?;
@@ -135,6 +138,16 @@ impl SecretStore {
             SecretBackend::Keyring => keyring::get(account),
             SecretBackend::Vault => Vault::new(&self.dir).get(account),
         }
+    }
+
+    /// 读一个**可能读不到**的后端。
+    ///
+    /// 钥匙串在很多场合是不可用的：Linux 上没装 Secret Service、
+    /// macOS 上条目不存在、或者用户没点「允许」。
+    /// 这些情况下必须按「没有这条秘密」处理 —— 用户明明选了当前后端，
+    /// 不该因为另一个后端不可用就把整个读取搞失败。
+    fn read_optional_from(&self, backend: SecretBackend, account: &str) -> Option<String> {
+        self.read_from(backend, account).ok().flatten()
     }
 
     fn write_to(&self, backend: SecretBackend, account: &str, secret: &str) -> AppResult<()> {
@@ -172,6 +185,9 @@ impl SecretStore {
     /// 当前后端里没有时，会去另一个后端找一次，找到就顺手搬过来。
     /// 这样从钥匙串切到本地加密文件后，**只有第一次**要授权，
     /// 密码落到新后端后就再也不碰钥匙串了。
+    ///
+    /// 另一个后端读不出来（钥匙串不可用 / 没授权）时按「没有这条秘密」
+    /// 处理 —— 用户选了当前后端，就不该被另一个后端连累。
     pub fn get(&self, account: &str) -> AppResult<Option<String>> {
         let backend = self.backend();
         if let Some(secret) = self.read_from(backend, account)? {
@@ -182,7 +198,7 @@ impl SecretStore {
             SecretBackend::Keyring => SecretBackend::Vault,
             SecretBackend::Vault => SecretBackend::Keyring,
         };
-        let Some(secret) = self.read_from(other, account)? else {
+        let Some(secret) = self.read_optional_from(other, account) else {
             return Ok(None);
         };
 
@@ -272,6 +288,39 @@ mod tests {
         store.write_backend(SecretBackend::Keyring).unwrap();
         store.ensure_backend().unwrap();
         assert_eq!(store.backend(), SecretBackend::Keyring);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 当前后端里没有这条秘密时，读取应返回 `None`，**不是**报错。
+    ///
+    /// 这条以前在 Linux 上挂过：读不到时会退到另一个后端（系统钥匙串），
+    /// 而钥匙串在没有 Secret Service 的机器上直接报错，于是一条
+    /// 「本来就没有密码」的读取被搞成了失败 —— 用户选了本地加密文件，
+    /// 结果连不上服务器。
+    #[test]
+    fn missing_secret_reads_as_none_even_if_other_backend_is_unavailable() {
+        let dir = temp_dir("missing");
+        let store = SecretStore::new(&dir);
+        store.write_backend(SecretBackend::Vault).unwrap();
+
+        assert_eq!(store.get("host/password").unwrap(), None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 另一个后端读不出来时，一律按「没有这条秘密」处理。
+    #[test]
+    fn unreadable_backend_is_treated_as_missing() {
+        let dir = temp_dir("unreadable");
+        let store = SecretStore::new(&dir);
+
+        // macOS 上条目不存在、Linux 上没有 Secret Service —— 两种情况
+        // 都必须落到 None，而不是把错误抛出去。
+        assert_eq!(
+            store.read_optional_from(SecretBackend::Keyring, "ssh7-unit-test-nonexistent"),
+            None
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
