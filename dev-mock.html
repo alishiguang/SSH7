@@ -80,6 +80,14 @@
               case 'session_test':
                 return { ok: true, latencyMs: 42 }
               case 'sftp_list':
+                if (location.search.indexOf('fail') >= 0) {
+                  var err = new Error('内部错误')
+                  err.code = 'INTERNAL'
+                  err.hint = '重试一次；若仍失败，请把下方的错误详情一并反馈'
+                  err.detail =
+                    'Status(Status { id: 5, status_code: NoSuchFile, error_message: "No such file", language_tag: "" })'
+                  throw err
+                }
                 return [
                   {
                     name: 'logs',
