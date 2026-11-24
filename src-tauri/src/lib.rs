@@ -39,7 +39,10 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
-            app.manage(AppState::new(app.handle().clone(), config_dir));
+            let state = AppState::new(app.handle().clone(), config_dir);
+            // 首次运行把当前凭据后端落盘，让「用的是哪个后端」在磁盘上显式可查。
+            state.secrets.ensure_backend()?;
+            app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

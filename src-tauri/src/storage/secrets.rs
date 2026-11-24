@@ -151,6 +151,17 @@ impl SecretStore {
         }
     }
 
+    /// 确保偏好文件存在：首次运行时把当前后端写进去。
+    ///
+    /// 否则「当前用的哪个后端」只能靠「文件缺失 → 回落默认值」这条隐式路径
+    /// 推断，磁盘上看不出真实状态。
+    pub fn ensure_backend(&self) -> AppResult<()> {
+        if self.pref_path().exists() {
+            return Ok(());
+        }
+        self.write_backend(self.backend())
+    }
+
     /// 写入一条秘密。
     pub fn set(&self, account: &str, secret: &str) -> AppResult<()> {
         self.write_to(self.backend(), account, secret)
@@ -244,6 +255,24 @@ mod tests {
         std::fs::write(dir.join(PREF_FILE), b"{ not json").unwrap();
         let store = SecretStore::new(&dir);
         assert_eq!(store.backend(), default_backend());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ensure_backend_materializes_the_current_backend() {
+        let dir = temp_dir("ensure");
+        let store = SecretStore::new(&dir);
+
+        // 首次运行：偏好文件被写出来，内容就是当前后端。
+        store.ensure_backend().unwrap();
+        assert!(dir.join(PREF_FILE).exists(), "偏好文件应该被写出来");
+        assert_eq!(store.backend(), default_backend());
+
+        // 再调一次不会覆盖已有选择。
+        store.write_backend(SecretBackend::Keyring).unwrap();
+        store.ensure_backend().unwrap();
+        assert_eq!(store.backend(), SecretBackend::Keyring);
+
         std::fs::remove_dir_all(&dir).ok();
     }
 }
