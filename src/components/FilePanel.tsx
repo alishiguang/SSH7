@@ -4,6 +4,10 @@ import { BridgeError, sftpApi } from '../api/bridge'
 import type { RemoteFile } from '../api/types'
 import { useDropZone } from '../hooks/useDropZone'
 import { useSessions } from '../store/sessions'
+import {
+  FILE_PANEL_WIDTH_MIN,
+  useSettings,
+} from '../store/settings'
 import { useTransfers } from '../store/transfers'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
@@ -15,6 +19,14 @@ interface Props {
   /** 删除前的二次确认。 */
   askConfirm: (spec: ConfirmSpec) => void
 }
+
+/**
+ * 面板最多能占屏幕的一半。
+ *
+ * 再宽就没法同时看见终端和文件了 —— 这个上限是「方便看长文件名」
+ * 与「还能看见终端」之间的平衡点。
+ */
+export const FILE_PANEL_MAX_RATIO = 0.5
 
 /** 远端路径拼接。避免旧版 `.replace('//','/')` 只替换第一处的问题。 */
 export function joinRemote(dir: string, name: string): string {
@@ -57,6 +69,63 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
   const transfers = useTransfers((s) => s.transfers)
   const startTransfer = useTransfers((s) => s.start)
   const finishTransfer = useTransfers((s) => s.finish)
+
+  /* ── 面板宽度：拖左边缘调整 ─────────────────────── */
+  const panelWidth = useSettings((s) => s.filePanelWidth)
+  const setPanelWidth = useSettings((s) => s.setFilePanelWidth)
+  const [resizing, setResizing] = useState(false)
+  /** 窗口宽度 —— 面板上限跟着它走（最多占一半）。 */
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  )
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  /** 面板能有的最大宽度：屏幕的一半。 */
+  const maxWidth = Math.max(
+    FILE_PANEL_WIDTH_MIN,
+    Math.floor(viewportWidth * FILE_PANEL_MAX_RATIO),
+  )
+  /** 实际生效的宽度（存的值可能被夹过）。 */
+  const width = Math.min(Math.max(panelWidth, FILE_PANEL_WIDTH_MIN), maxWidth)
+
+  /**
+   * 拖左边缘改宽度：往左拖变宽，往右拖变窄。
+   *
+   * 上限是屏幕的一半 —— 再宽就看不见终端了。
+   */
+  const startResize = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      setResizing(true)
+      const startX = e.clientX
+      const startWidth = width
+
+      const onMove = (ev: PointerEvent) => {
+        const next = startWidth + (startX - ev.clientX)
+        setPanelWidth(Math.min(maxWidth, Math.max(FILE_PANEL_WIDTH_MIN, next)))
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        setResizing(false)
+      }
+      // 拖动期间光标固定成「拉宽」的样子，别让它在半路变回箭头。
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    },
+    [width, maxWidth, setPanelWidth],
+  )
 
   /**
    * 这个会话的远端工作目录 —— 由 OSC 7 跟踪得到。
@@ -245,7 +314,15 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
   const sessionTransfers = transfers.filter((t) => t.sessionId === sessionId)
 
   return (
-    <aside className="file-panel">
+    <aside className="file-panel" style={{ width: `${width}px` }}>
+      <div
+        className={`file-panel-resizer${resizing ? ' is-dragging' : ''}`}
+        onPointerDown={startResize}
+        title="拖动调整面板宽度"
+        aria-label="调整文件面板宽度"
+        role="separator"
+        aria-orientation="vertical"
+      />
       <div className="file-panel-head">
         <span className="meta">FILES</span>
         <div className="file-panel-head-actions">

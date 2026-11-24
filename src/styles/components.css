@@ -1148,11 +1148,29 @@
 .file-panel {
   width: var(--panel-w);
   flex-shrink: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--ink-800);
   border-left: 1px solid var(--line);
   animation: fade-in 0.16s var(--ease);
+}
+
+/* 左边缘的拖拽把手 —— 往左拖把面板拉宽。 */
+.file-panel-resizer {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 6;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s var(--ease);
+}
+.file-panel-resizer:hover,
+.file-panel-resizer.is-dragging {
+  background: var(--red);
 }
 
 .file-panel-head {

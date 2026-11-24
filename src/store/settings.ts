@@ -11,6 +11,11 @@ export const UI_SCALE_MIN = 0.85
 export const UI_SCALE_MAX = 1.3
 export const UI_SCALE_DEFAULT = 1
 
+/** 文件面板宽度的取值范围（px）。 */
+export const FILE_PANEL_WIDTH_DEFAULT = 340
+export const FILE_PANEL_WIDTH_MIN = 240
+export const FILE_PANEL_WIDTH_MAX = 2000
+
 const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v))
 
@@ -25,12 +30,16 @@ interface SettingsStore {
   terminalFontSize: number
   /** 界面整体缩放系数 */
   uiScale: number
+  /** 文件面板宽度（px）—— 拖动左边缘即可调整。 */
+  filePanelWidth: number
   setTerminalFontSize: (size: number) => void
   /** 按步长微调终端字号，用于快捷键 */
   nudgeTerminalFontSize: (delta: number) => void
   setUiScale: (scale: number) => void
   /** 按步长微调界面缩放 */
   nudgeUiScale: (delta: number) => void
+  /** 设置文件面板宽度（超出范围的会被夹取）。 */
+  setFilePanelWidth: (width: number) => void
   reset: () => void
 }
 
@@ -79,10 +88,11 @@ const rawStorage: StateStorage<void> = {
   },
 }
 
-/** 落盘的形状：只存两个数值。 */
+/** 落盘的形状：只存这几个数值。 */
 export interface PersistedSettings {
   terminalFontSize: number
   uiScale: number
+  filePanelWidth: number
 }
 
 const storage = createJSONStorage<PersistedSettings>(() => rawStorage)
@@ -92,6 +102,7 @@ export const useSettings = create<SettingsStore>()(
     (set, get) => ({
       terminalFontSize: TERMINAL_FONT_DEFAULT,
       uiScale: UI_SCALE_DEFAULT,
+      filePanelWidth: FILE_PANEL_WIDTH_DEFAULT,
 
       setTerminalFontSize: (size) =>
         set({
@@ -124,10 +135,19 @@ export const useSettings = create<SettingsStore>()(
         applyUiScale(next)
       },
 
+      // 面板宽度：拖动时每帧都会调进来，所以不做过多的处理，只夹范围。
+      setFilePanelWidth: (width) =>
+        set({
+          filePanelWidth: Math.round(
+            clamp(width, FILE_PANEL_WIDTH_MIN, FILE_PANEL_WIDTH_MAX),
+          ),
+        }),
+
       reset: () => {
         set({
           terminalFontSize: TERMINAL_FONT_DEFAULT,
           uiScale: UI_SCALE_DEFAULT,
+          filePanelWidth: FILE_PANEL_WIDTH_DEFAULT,
         })
         applyUiScale(UI_SCALE_DEFAULT)
       },
@@ -135,10 +155,11 @@ export const useSettings = create<SettingsStore>()(
     {
       name: 'ssh7.settings',
       storage,
-      // 只持久化两个数值，函数不入盘。
+      // 只持久化这几个数值，函数不入盘。
       partialize: (s) => ({
         terminalFontSize: s.terminalFontSize,
         uiScale: s.uiScale,
+        filePanelWidth: s.filePanelWidth,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyUiScale(state.uiScale)

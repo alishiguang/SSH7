@@ -61,6 +61,7 @@ fn resolve_credential(request: &ConnectRequest, store: &SecretStore) -> AppResul
 #[tauri::command]
 pub async fn session_connect(
     state: State<'_, AppState>,
+    window: tauri::Window,
     request: ConnectRequest,
 ) -> AppResult<SessionInfo> {
     let host = request.host.trim().to_string();
@@ -86,12 +87,17 @@ pub async fn session_connect(
 
     let session = client::connect(
         &state.app,
-        &host,
-        port,
-        &username,
-        &credential,
-        label.clone(),
-        request.auth_type,
+        client::ConnectParams {
+            host: &host,
+            port,
+            username: &username,
+            credential: &credential,
+            label: label.clone(),
+            auth_type: request.auth_type,
+            // 这个会话归**发起连接的这扇窗**所有 —— 终端数据只发给它。
+            window_label: window.label().to_string(),
+            host_id: request.host_id.clone(),
+        },
     )
     .await?;
 
@@ -139,6 +145,7 @@ pub async fn session_connect(
 #[tauri::command]
 pub async fn session_test(
     state: State<'_, AppState>,
+    window: tauri::Window,
     request: ConnectRequest,
 ) -> AppResult<TestResult> {
     let started = Instant::now();
@@ -161,12 +168,17 @@ pub async fn session_test(
 
     match client::connect(
         &state.app,
-        &host,
-        port,
-        &username,
-        &credential,
-        label,
-        request.auth_type,
+        client::ConnectParams {
+            host: &host,
+            port,
+            username: &username,
+            credential: &credential,
+            label,
+            auth_type: request.auth_type,
+            // 测试用的会话不会注册进注册表，归属给谁无所谓 —— 但也得有个标签。
+            window_label: window.label().to_string(),
+            host_id: None,
+        },
     )
     .await
     {

@@ -53,6 +53,62 @@ pub struct SessionInfo {
     pub username: String,
     /// 本次使用的认证方式，前端据此实现「重试」。
     pub auth_type: AuthType,
+    /// 来自哪台已保存主机（如果有）。
+    ///
+    /// 多窗口下靠它认人：「这台机器是不是已经开着」问的是**连接配置**，
+    /// 不是地址 —— 两条配置指向同一台机器时，它们仍然是两台「机器」。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+}
+
+/// 「把这台机器开到一个窗口里」的请求。
+///
+/// 只要**身份**（哪台机器），不要凭据 —— 凭据由新窗口自己去凭据库读，
+/// 明文秘密从来不经过前端。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWindowRequest {
+    /// 已保存主机的 id。有它就按 id 认人，没有就退回地址三元组。
+    #[serde(default)]
+    pub host_id: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    /// 新窗口标题上显示的名字。
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// 打开窗口之后发生了什么。
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OpenWindowAction {
+    /// 当前窗口里已经有这个会话 —— 切标签就行。
+    Switch,
+    /// 别的窗口里开着 —— 已经把那扇窗叫到前面来了。
+    Focused,
+    /// 之前都没开着 —— 新开了一扇窗。
+    Created,
+}
+
+/// 「打开窗口」的结果。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWindowResult {
+    pub action: OpenWindowAction,
+    /// 对应的会话（`Switch` / `Focused` 时有）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// 涉及的窗口标签。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+}
+
+/// 让某个窗口切到指定会话标签。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusSessionEvent {
+    pub session_id: String,
 }
 
 /// 连通性测试结果。
@@ -190,6 +246,8 @@ pub mod event {
     pub const CWD: &str = "session://cwd";
     pub const ERROR: &str = "session://error";
     pub const TRANSFER: &str = "transfer://progress";
+    /// 让某扇窗切到某个会话标签（多窗口下「定位过去」用）。
+    pub const FOCUS_SESSION: &str = "window://focus-session";
 }
 
 #[cfg(test)]

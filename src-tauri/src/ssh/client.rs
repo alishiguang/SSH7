@@ -79,6 +79,12 @@ impl russh::client::Handler for ClientHandler {
 pub struct Session {
     pub id: String,
     pub info: SessionInfo,
+    /// 这个会话属于**哪一扇窗**。
+    ///
+    /// 前端的状态是每扇窗一份（每扇 WebviewWindow 有独立的 JS 上下文），
+    /// 所以「这个会话归谁」只能记在 Rust 侧 —— 它是所有窗口共享的唯一真相。
+    /// 终端数据也只发给这扇窗，广播的话每扇窗都会收到别人的输出（缺陷 #31）。
+    pub window_label: String,
     /// shell channel 的写端：用户输入与窗口尺寸调整都走这里。
     writer: Arc<ChannelWriteHalf<Msg>>,
     /// SSH 连接句柄。
@@ -87,6 +93,12 @@ pub struct Session {
     sftp: Arc<Mutex<Option<Arc<SftpClient>>>>,
     /// 前端是否已挂载终端。
     attached: AtomicBool,
+    /// 连接是否已经关闭。
+    ///
+    /// 远端断开时连接会被释放，但会话仍留在注册表里（前端那边还显示着
+    /// 一个「已断开」的标签）。这个标记用来区分「还活着」和「已经断了」——
+    /// 否则「双击找已有窗口」会定位到一扇摆着死连接的窗。
+    closed: AtomicBool,
     /// 挂载前缓存的终端数据。
     pending: Mutex<Vec<u8>>,
     /// 本次连接使用的凭据。
@@ -96,9 +108,54 @@ pub struct Session {
     credential: Arc<crate::ssh::auth::Credential>,
 }
 
+/// 会话的「连接配置」标识。
+///
+/// 有主机 id 就按 id 认人 —— 两条配置指向同一台机器时，它们仍然是两台
+/// 「机器」，各自独立开窗。没有 id（临时连的）就退回地址三元组。
+pub fn target_key(host_id: Option<&str>, host: &str, port: u16, username: &str) -> String {
+    match host_id {
+        Some(id) if !id.trim().is_empty() => format!("id:{}", id.trim()),
+        _ => format!("addr:{host}:{port}:{username}"),
+    }
+}
+
+/// 把事件发给**拥有这个会话的那扇窗**。
+///
+/// 不能用广播：多窗口下广播会让每扇窗都收到别的会话的终端输出与传输进度，
+/// 界面上会串台（缺陷 #31）。
+fn emit_to_owner(
+    app: &tauri::AppHandle,
+    window_label: &str,
+    event: &str,
+    payload: impl serde::Serialize + Clone,
+) {
+    let _ = app.emit_to(
+        tauri::EventTarget::Window {
+            label: window_label.to_string(),
+        },
+        event,
+        payload,
+    );
+}
+
 impl Session {
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// 这个会话对应的是哪一条「连接配置」。
+    pub fn target_key(&self) -> String {
+        target_key(
+            self.info.host_id.as_deref(),
+            &self.info.host,
+            self.info.port,
+            &self.info.username,
+        )
+    }
+
+    /// 连接是否已经断了。
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
     }
 
     /// 写入终端输入。
@@ -134,7 +191,7 @@ impl Session {
                 session_id: self.id.clone(),
                 data: String::from_utf8_lossy(data).into_owned(),
             };
-            let _ = app.emit(event::DATA, payload);
+            emit_to_owner(app, &self.window_label, event::DATA, payload);
         } else {
             let mut buf = self.pending.lock().await;
             if buf.len() < MAX_PENDING_BYTES {
@@ -159,11 +216,13 @@ impl Session {
             session_id: self.id.clone(),
             data: String::from_utf8_lossy(&buffered).into_owned(),
         };
-        let _ = app.emit(event::DATA, payload);
+        emit_to_owner(app, &self.window_label, event::DATA, payload);
     }
 
     /// 断开连接并释放所有 channel。
     pub async fn shutdown(&self) {
+        // 先标记为已关闭：找「已经开着的会话」时就不该再算上它。
+        self.closed.store(true, Ordering::SeqCst);
         let _ = self.writer.close().await;
         if let Some(sftp) = self.sftp.lock().await.as_ref() {
             sftp.close().await;
@@ -175,16 +234,34 @@ impl Session {
     }
 }
 
+/// 建立一次连接所需的全部参数。
+///
+/// 参数一多就容易传错位置 —— 打包成结构体，以后加字段也不会静默错位。
+pub struct ConnectParams<'a> {
+    pub host: &'a str,
+    pub port: u16,
+    pub username: &'a str,
+    pub credential: &'a crate::ssh::auth::Credential,
+    pub label: String,
+    pub auth_type: crate::types::AuthType,
+    /// 这个会话归哪扇窗 —— 多窗口下终端数据只发给它。
+    pub window_label: String,
+    /// 来自哪台已保存主机（连接配置的身份）。
+    pub host_id: Option<String>,
+}
+
 /// 建立 SSH 连接并打开 shell 与 SFTP channel。
-pub async fn connect(
-    app: &tauri::AppHandle,
-    host: &str,
-    port: u16,
-    username: &str,
-    credential: &crate::ssh::auth::Credential,
-    label: String,
-    auth_type: crate::types::AuthType,
-) -> AppResult<Arc<Session>> {
+pub async fn connect(app: &tauri::AppHandle, p: ConnectParams<'_>) -> AppResult<Arc<Session>> {
+    let ConnectParams {
+        host,
+        port,
+        username,
+        credential,
+        label,
+        auth_type,
+        window_label,
+        host_id,
+    } = p;
     let handler = ClientHandler {
         host: host.to_string(),
         port,
@@ -286,15 +363,18 @@ pub async fn connect(
         port,
         username: username.to_string(),
         auth_type,
+        host_id,
     };
 
     let session = Arc::new(Session {
         id: session_id.clone(),
         info: info.clone(),
+        window_label,
         writer,
         handle,
         sftp: Arc::new(Mutex::new(None)),
         attached: AtomicBool::new(false),
+        closed: AtomicBool::new(false),
         pending: Mutex::new(Vec::new()),
         credential: Arc::new(credential.clone()),
     });
@@ -355,12 +435,17 @@ pub async fn clone_session(
     let label = format!("{base} · 副本");
     connect(
         app,
-        &source.info.host,
-        source.info.port,
-        &source.info.username,
-        &source.credential,
-        label,
-        source.info.auth_type,
+        ConnectParams {
+            host: &source.info.host,
+            port: source.info.port,
+            username: &source.info.username,
+            credential: &source.credential,
+            label,
+            auth_type: source.info.auth_type,
+            // 克隆出来的会话属于**当前这扇窗**，并沿用源会话的连接配置身份。
+            window_label: source.window_label.clone(),
+            host_id: source.info.host_id.clone(),
+        },
     )
     .await
 }
@@ -378,7 +463,7 @@ async fn pump(app: tauri::AppHandle, session: Arc<Session>, mut read_half: Chann
                         session_id: session.id.clone(),
                         cwd,
                     };
-                    let _ = app.emit(event::CWD, payload);
+                    emit_to_owner(&app, &session.window_label, event::CWD, payload);
                 }
                 session.push_data(&app, &data).await;
             }
@@ -403,10 +488,63 @@ async fn pump(app: tauri::AppHandle, session: Arc<Session>, mut read_half: Chann
         session_id: session.id.clone(),
         reason,
     };
-    let _ = app.emit(event::CLOSED, payload);
+    emit_to_owner(&app, &session.window_label, event::CLOSED, payload);
 }
 
 /// 发送传输进度事件。
-pub fn emit_transfer_progress(app: &tauri::AppHandle, progress: TransferProgress) {
-    let _ = app.emit(event::TRANSFER, progress);
+///
+/// 进度只发给**发起这次传输的那扇窗** —— 别的窗既没发起也不该看见。
+pub fn emit_transfer_progress(
+    app: &tauri::AppHandle,
+    window_label: &str,
+    progress: TransferProgress,
+) {
+    emit_to_owner(app, window_label, event::TRANSFER, progress);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 有主机 id 就按 id 认人 —— 同一台机器的两条配置仍然是两台「机器」。
+    #[test]
+    fn target_key_prefers_host_id() {
+        assert_eq!(target_key(Some("h1"), "10.0.0.1", 22, "root"), "id:h1");
+        // 同一个地址、不同的 id → 两台机器。
+        assert_ne!(
+            target_key(Some("h1"), "10.0.0.1", 22, "root"),
+            target_key(Some("h2"), "10.0.0.1", 22, "root")
+        );
+    }
+
+    /// 没有 id（临时连的）就退回地址三元组。
+    #[test]
+    fn target_key_falls_back_to_address() {
+        assert_eq!(
+            target_key(None, "10.0.0.1", 22, "root"),
+            "addr:10.0.0.1:22:root"
+        );
+        // 空 id 等同于没有 id。
+        assert_eq!(
+            target_key(Some(""), "10.0.0.1", 22, "root"),
+            "addr:10.0.0.1:22:root"
+        );
+        assert_eq!(
+            target_key(Some("   "), "10.0.0.1", 22, "root"),
+            "addr:10.0.0.1:22:root"
+        );
+    }
+
+    /// 地址三元组不同的，就是不同的目标。
+    #[test]
+    fn target_key_distinguishes_by_port_and_user() {
+        assert_ne!(
+            target_key(None, "10.0.0.1", 22, "root"),
+            target_key(None, "10.0.0.1", 2222, "root")
+        );
+        assert_ne!(
+            target_key(None, "10.0.0.1", 22, "root"),
+            target_key(None, "10.0.0.1", 22, "ops")
+        );
+    }
 }

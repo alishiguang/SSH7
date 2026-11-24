@@ -14,6 +14,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      「最近一次开窗请求」的结果。自动化测试直接读它的文本就行，
+      不用抢在 toast 消失前截图。
+    -->
+    <div id="mock-open" style="position: fixed; left: -9999px"></div>
 
     <!--
       仅用于**前端 UI 开发**：用一套假的 Tauri IPC 响应把界面跑起来，
@@ -69,6 +74,12 @@
         ]
         // 分组清单：可以有空分组，决定侧边栏里的顺序。
         var groups = ['生产环境', '测试环境']
+
+        // 多窗口模拟：
+        //   mockSessions —— 本窗口里已经建立的会话（按连接配置记）
+        //   mockWindows  —— 已经为某台机器开过的窗口
+        var mockSessions = []
+        var mockWindows = {}
 
         function clone(info) {
           return {
@@ -185,13 +196,79 @@
                 await new Promise(function (res) {
                   setTimeout(res, ms)
                 })
+                var sid = 's' + Math.random().toString(36).slice(2, 10)
+                // 记下来 —— 「双击开窗」要知道这台机器是不是已经开着。
+                mockSessions.push({
+                  sessionId: sid,
+                  hostId: r.hostId,
+                  host: r.host,
+                  port: r.port || 22,
+                  username: r.username,
+                })
                 return {
-                  sessionId: 's' + Math.random().toString(36).slice(2, 10),
+                  sessionId: sid,
                   label: r.label || r.username + '@' + r.host,
                   host: r.host,
                   port: r.port || 22,
                   username: r.username,
                   authType: r.authType || 'password',
+                  hostId: r.hostId,
+                }
+              }
+              case 'session_open_in_window': {
+                var req = (args && args.request) || {}
+                var key =
+                  req.hostId ||
+                  req.host + ':' + (req.port || 22) + ':' + req.username
+                var res
+                // 1) 当前窗口里已经有这个会话 → 切标签
+                for (var i = 0; i < mockSessions.length; i++) {
+                  var ms2 = mockSessions[i]
+                  var same = req.hostId
+                    ? ms2.hostId === req.hostId
+                    : ms2.host === req.host &&
+                      ms2.port === (req.port || 22) &&
+                      ms2.username === req.username
+                  if (same) {
+                    res = {
+                      action: 'switch',
+                      sessionId: ms2.sessionId,
+                      window: 'mock-main',
+                    }
+                    break
+                  }
+                }
+                // 2) 已经为它开过窗 → 聚焦那扇窗
+                if (!res && mockWindows[key]) {
+                  res = { action: 'focused', window: mockWindows[key] }
+                }
+                // 3) 都没开着 → 新开一扇
+                if (!res) {
+                  var wlabel = 'mock-w-' + (Object.keys(mockWindows).length + 1)
+                  mockWindows[key] = wlabel
+                  res = { action: 'created', window: wlabel }
+                }
+                // 把结果记在 DOM 上，自动化测试直接读文本就行。
+                var note = document.getElementById('mock-open')
+                if (note) note.textContent = JSON.stringify(res)
+                return res
+              }
+              case 'window_boot': {
+                // ?boot=<hostId> 模拟「这扇窗是专门为这台机器开的」
+                var bm = location.search.match(/[?&]boot=([^&]+)/)
+                if (!bm) return null
+                var bid = decodeURIComponent(bm[1])
+                var bh = null
+                for (var j = 0; j < hosts.length; j++) {
+                  if (hosts[j].id === bid) bh = hosts[j]
+                }
+                if (!bh) return null
+                return {
+                  hostId: bh.id,
+                  host: bh.host,
+                  port: bh.port,
+                  username: bh.username,
+                  label: bh.label,
                 }
               }
               case 'session_clone':

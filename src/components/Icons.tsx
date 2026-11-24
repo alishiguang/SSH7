@@ -29,6 +29,7 @@ export type IconName =
   | 'key'
   | 'menu'
   | 'panel'
+  | 'window'
   | 'arrow-up'
   | 'dots'
   | 'settings'
@@ -126,6 +127,14 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
       <path d="M10 2.5v11" />
+    </>
+  ),
+  // 独立窗口：带标题栏的小窗，跟「终端」区分开。
+  window: (
+    <>
+      <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" />
+      <path d="M1.5 6.5h13" />
+      <path d="M4 5h1.5M7 5h1.5" />
     </>
   ),
   'arrow-up': <path d="M8 13V3M4 7l4-4 4 4" />,

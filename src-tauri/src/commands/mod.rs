@@ -4,10 +4,12 @@ pub mod credentials;
 pub mod host;
 pub mod session;
 pub mod sftp;
+pub mod window;
 
 use tauri::AppHandle;
 
 use crate::state::sessions::SessionRegistry;
+use crate::state::windows::WindowRegistry;
 use crate::storage::hosts::HostsStore;
 use crate::storage::secrets::SecretStore;
 
@@ -17,6 +19,8 @@ pub struct AppState {
     pub app: AppHandle,
     /// 活跃会话注册表。
     pub sessions: SessionRegistry,
+    /// 窗口登记表：哪台机器开在哪扇窗。
+    pub windows: WindowRegistry,
     /// 已保存主机的存储。
     pub hosts: HostsStore,
     /// 凭据存储（系统钥匙串 / 本地加密文件）。
@@ -28,6 +32,7 @@ impl AppState {
         Self {
             app,
             sessions: SessionRegistry::new(),
+            windows: WindowRegistry::new(),
             hosts: HostsStore::new(&config_dir),
             secrets: SecretStore::new(&config_dir),
         }

@@ -157,6 +157,7 @@ pub fn plan_upload(root: &Path) -> AppResult<UploadPlan> {
 /// 上传方向的进度事件。
 fn emit_upload_progress(
     app: &tauri::AppHandle,
+    window_label: &str,
     transfer_id: &str,
     session_id: &str,
     file_name: &str,
@@ -174,6 +175,7 @@ fn emit_upload_progress(
 
     crate::ssh::client::emit_transfer_progress(
         app,
+        window_label,
         TransferProgress {
             transfer_id: transfer_id.to_string(),
             session_id: session_id.to_string(),
@@ -361,6 +363,7 @@ impl SftpClient {
         remote_dir: &str,
         transfer_id: &str,
         session_id: &str,
+        window_label: &str,
         app: &tauri::AppHandle,
     ) -> AppResult<String> {
         let root = Path::new(local_path);
@@ -374,7 +377,15 @@ impl SftpClient {
         let remote_dir = self.resolve_remote_dir(remote_dir).await;
 
         self.apply_plan(&plan, &remote_dir, |name, transferred, total| {
-            emit_upload_progress(app, transfer_id, session_id, name, transferred, total);
+            emit_upload_progress(
+                app,
+                window_label,
+                transfer_id,
+                session_id,
+                name,
+                transferred,
+                total,
+            );
         })
         .await?;
 
@@ -388,6 +399,7 @@ impl SftpClient {
         local_dir: &str,
         transfer_id: &str,
         session_id: &str,
+        window_label: &str,
         app: &tauri::AppHandle,
     ) -> AppResult<String> {
         self.download_to(remote_path, local_dir, |file_name, transferred, total| {
@@ -400,6 +412,7 @@ impl SftpClient {
             };
             crate::ssh::client::emit_transfer_progress(
                 app,
+                window_label,
                 TransferProgress {
                     transfer_id: transfer_id.to_string(),
                     session_id: session_id.to_string(),

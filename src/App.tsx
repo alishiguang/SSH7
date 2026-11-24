@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { events, sessionApi } from './api/bridge'
+import { events, sessionApi, windowApi } from './api/bridge'
 import type { ConnectRequest, HostSaveRequest, SavedHost } from './api/types'
 import ConnectDialog from './components/ConnectDialog'
 import ConfirmDialog, { type ConfirmSpec } from './components/ConfirmDialog'
@@ -139,10 +139,17 @@ export default function App() {
       })
       .then((un) => cleanups.push(un))
 
+    // 「定位到那扇窗」—— 别的窗口里开着同一台机器时，它会叫我们切过去。
+    void events
+      .onFocusSession((e) => {
+        setActive(e.sessionId)
+      })
+      .then((un) => cleanups.push(un))
+
     return () => {
       for (const c of cleanups) c()
     }
-  }, [patchSession, reportError, transfers])
+  }, [patchSession, reportError, transfers, setActive])
 
   /* ── 会话被移除时真正断开连接 ───────────────────
      缺陷 #2 / #9：旧版关闭标签只是把 UI 移除，SSH 连接一直挂着。
@@ -285,6 +292,74 @@ export default function App() {
     [setActive],
   )
 
+  /**
+   * 双击主机：把这台机器开到一个**独立窗口**里。
+   *
+   * 已经开着就别再开一扇 —— Rust 侧知道那扇窗在哪，直接把它叫到前面；
+   * 开着好几扇就挑一扇（「切换到其中一个」）。
+   */
+  const handleOpenInWindow = useCallback(
+    async (host: SavedHost) => {
+      try {
+        const result = await windowApi.openInWindow({
+          hostId: host.id,
+          host: host.host,
+          port: host.port,
+          username: host.username,
+          label: host.label,
+        })
+        if (result.action === 'switch' && result.sessionId) {
+          // 就在当前窗口里 —— 切标签就行。
+          setActive(result.sessionId)
+        } else if (result.action === 'focused') {
+          push({
+            kind: 'info',
+            title: '已定位',
+            message: `${host.label} 已经在另一个窗口开着`,
+          })
+        } else {
+          push({ kind: 'success', title: '已在新窗口打开', message: host.label })
+        }
+      } catch (e) {
+        reportError('打开新窗口失败', e as never)
+      }
+    },
+    [setActive, push, reportError],
+  )
+
+  /* ── 新窗口启动：自动连上被指派的那台机器 ───────────
+     双击主机开出来的新窗口靠这个连上目标 —— 参数从 Rust 侧拿，
+     不经过 URL，也就没有「参数还没到就先连上了」的竞态。          */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      let assignment
+      try {
+        assignment = await windowApi.boot()
+      } catch {
+        return
+      }
+      if (!assignment || cancelled) return
+      // 主机列表可能还没加载好，先确保拿到。
+      await loadHosts().catch(() => {})
+      if (cancelled) return
+      const pool = useHosts.getState().hosts
+      const target = assignment.hostId
+        ? pool.find((h) => h.id === assignment.hostId)
+        : pool.find(
+            (h) =>
+              h.host === assignment.host &&
+              h.port === assignment.port &&
+              h.username === assignment.username,
+          )
+      if (!target) return
+      await openHostSession(target)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadHosts, openHostSession])
+
   /** 克隆会话：凭据在 Rust 侧复用，前端不接触明文密码。 */
   const handleCloneSession = useCallback(
     async (sessionId: string) => {
@@ -412,6 +487,12 @@ export default function App() {
         icon: 'plus',
         onSelect: () => void openHostSession(h),
       },
+      {
+        id: 'open-window',
+        label: '在新窗口打开',
+        icon: 'window',
+        onSelect: () => void handleOpenInWindow(h),
+      },
     ]
     if (existing) {
       items.push({
@@ -454,7 +535,7 @@ export default function App() {
       },
     )
     return items
-  }, [hostMenu, hosts, openHostSession, switchToHostSession, removeHost, askConfirm])
+  }, [hostMenu, hosts, openHostSession, handleOpenInWindow, switchToHostSession, removeHost, askConfirm])
 
   const activeSession = sessions.find((s) => s.id === activeId)
 
@@ -483,6 +564,7 @@ export default function App() {
             setDialogOpen(true)
           }}
           onOpenNewSession={(host) => void openHostSession(host)}
+          onOpenInWindow={(host) => void handleOpenInWindow(host)}
           onEditHost={(h) => {
             setEditingHost(h)
             setDialogOpen(true)

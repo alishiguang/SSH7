@@ -16,6 +16,8 @@ import type {
   CredentialBackend,
   CredentialStoreInfo,
   HostList,
+  OpenWindowRequest,
+  OpenWindowResult,
   RemoteFile,
   SavedHost,
   SessionClosedEvent,
@@ -25,6 +27,7 @@ import type {
   SessionInfo,
   TestResult,
   TransferProgress,
+  WindowAssignment,
 } from './types'
 
 /** SSH7 的公开仓库地址。 */
@@ -145,6 +148,23 @@ export const sftpApi = {
   pickUploadFolder: () => call<string | null>('sftp_pick_upload_folder'),
 }
 
+/* ── 窗口 ───────────────────────────────────────────── */
+
+export const windowApi = {
+  /**
+   * 把一台机器开到一个窗口里。
+   *
+   * 已经开着就聚焦过去，没开着就新开一扇 —— 具体发生了什么看返回值。
+   */
+  openInWindow: (req: OpenWindowRequest) =>
+    call<OpenWindowResult>('session_open_in_window', { request: req }),
+  /**
+   * 窗口启动时问一次：这扇窗是专门为哪台机器开的？
+   * 新窗口靠它自动连上目标主机。
+   */
+  boot: () => call<WindowAssignment | null>('window_boot'),
+}
+
 /* ── 凭据存储 ───────────────────────────────────────── */
 
 export const credentialApi = {
@@ -163,7 +183,13 @@ export const EVENT = {
   cwd: 'session://cwd',
   error: 'session://error',
   transfer: 'transfer://progress',
+  focusSession: 'window://focus-session',
 } as const
+
+/** 让本窗口切到某个会话标签。 */
+export interface FocusSessionEvent {
+  sessionId: string
+}
 
 export const events = {
   onData: (cb: (e: SessionDataEvent) => void): Promise<UnlistenFn> =>
@@ -176,4 +202,7 @@ export const events = {
     listen<SessionErrorEvent>(EVENT.error, (e) => cb(e.payload)),
   onTransfer: (cb: (e: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>(EVENT.transfer, (e) => cb(e.payload)),
+  /** 「定位到那扇窗」—— 被聚焦的窗口据此切到对应标签。 */
+  onFocusSession: (cb: (e: FocusSessionEvent) => void): Promise<UnlistenFn> =>
+    listen<FocusSessionEvent>(EVENT.focusSession, (e) => cb(e.payload)),
 }

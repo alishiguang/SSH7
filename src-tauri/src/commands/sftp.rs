@@ -53,6 +53,7 @@ pub async fn sftp_upload(
         &remote_dir,
         &transfer_id,
         &session_id,
+        &session.window_label,
         &state.app,
     )
     .await
@@ -75,6 +76,7 @@ pub async fn sftp_download(
         &local_dir,
         &transfer_id,
         &session_id,
+        &session.window_label,
         &state.app,
     )
     .await

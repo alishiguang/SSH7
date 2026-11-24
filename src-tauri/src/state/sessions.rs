@@ -58,4 +58,31 @@ impl SessionRegistry {
             s.shutdown().await;
         }
     }
+
+    /// 断开属于**某一扇窗**的所有会话。
+    ///
+    /// 多窗口下这是必须的：关掉一扇窗，它自己的会话得跟着断，
+    /// 不然连接会一直挂在后台（缺陷 #2 / #9 在多窗口下的延伸）。
+    pub async fn shutdown_window(&self, window_label: &str) {
+        let doomed: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|e| e.value().window_label == window_label)
+            .map(|e| e.key().clone())
+            .collect();
+        for id in doomed {
+            if let Some(s) = self.remove(&id) {
+                s.shutdown().await;
+            }
+        }
+    }
+
+    /// 属于某一扇窗的会话 id。
+    pub fn ids_of_window(&self, window_label: &str) -> Vec<String> {
+        self.sessions
+            .iter()
+            .filter(|e| e.value().window_label == window_label)
+            .map(|e| e.key().clone())
+            .collect()
+    }
 }

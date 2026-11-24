@@ -104,6 +104,40 @@ export interface SessionInfo {
   username: string
   /** 本次使用的认证方式 */
   authType: AuthType
+  /** 来自哪台已保存主机（如果有）—— 多窗口下靠它认人 */
+  hostId?: string
+}
+
+/** 「把这台机器开到一个窗口里」的请求。 */
+export interface OpenWindowRequest {
+  /** 已保存主机的 id。有它就按 id 认人，没有就退回地址三元组。 */
+  hostId?: string
+  host: string
+  port: number
+  username: string
+  /** 新窗口标题上显示的名字。 */
+  label?: string
+}
+
+/** 打开窗口之后发生了什么。 */
+export type OpenWindowAction = 'switch' | 'focused' | 'created'
+
+/** 「打开窗口」的结果。 */
+export interface OpenWindowResult {
+  action: OpenWindowAction
+  /** 对应的会话（switch / focused 时有）。 */
+  sessionId?: string
+  /** 涉及的窗口标签。 */
+  window?: string
+}
+
+/** 一扇窗被指派去连哪台机器。 */
+export interface WindowAssignment {
+  hostId?: string
+  host: string
+  port: number
+  username: string
+  label?: string
 }
 
 /** 远端文件条目。 */

@@ -37,6 +37,21 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // 窗口关掉了，它自己的会话得跟着断 —— 不然连接一直挂在后台。
+        //
+        // 注册在 Builder 上而不是 App 上：这样**运行时新建的窗口**
+        // （双击主机开出来的那种）也归它管。
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let label = window.label().to_string();
+                let handle = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = handle.state::<AppState>();
+                    state.windows.forget(&label);
+                    state.sessions.shutdown_window(&label).await;
+                });
+            }
+        })
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
@@ -64,6 +79,8 @@ pub fn run() {
             commands::session::session_attach,
             commands::session::session_clone,
             commands::session::session_disconnect,
+            commands::window::session_open_in_window,
+            commands::window::window_boot,
             commands::sftp::sftp_list,
             commands::sftp::sftp_upload,
             commands::sftp::sftp_download,
