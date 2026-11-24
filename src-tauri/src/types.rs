@@ -170,6 +170,19 @@ pub struct SavedHostDto {
     pub has_passphrase: bool,
 }
 
+/// 主机列表 + 分组清单。
+///
+/// 分组清单里可以有**空分组**（还没放任何主机），
+/// 这样用户可以先把「生产 / 测试 / 本地」建好，往里放机器时直接选。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostListDto {
+    pub hosts: Vec<SavedHostDto>,
+    /// 分组名与显示顺序。主机上的 `group` 字段指向这里的名字。
+    #[serde(default)]
+    pub groups: Vec<String>,
+}
+
 /// 事件名常量。前端 `src/api/bridge.ts` 中的 `EVENT` 必须与之对应。
 pub mod event {
     pub const DATA: &str = "session://data";

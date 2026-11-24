@@ -47,16 +47,16 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // 已经用过的分组名，输入框可以直接选，不用每次手打。
-  const hosts = useHosts((s) => s.hosts)
+  // 已经建过的分组，输入框可以直接选；输入新名字就是新建一个分组。
+  const groups = useHosts((s) => s.groups)
   const existingGroups = useMemo(() => {
     const set = new Set<string>()
-    for (const h of hosts) {
-      const g = h.group?.trim()
-      if (g) set.add(g)
+    for (const g of groups) {
+      const name = g.trim()
+      if (name) set.add(name)
     }
     return [...set].sort()
-  }, [hosts])
+  }, [groups])
 
   useEffect(() => {
     if (editHost) {
@@ -219,7 +219,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
               className="input"
               value={form.group}
               onChange={(e) => set('group', e.target.value)}
-              placeholder="留空不分组，例如「生产环境」"
+              placeholder="留空不分组；填新名字就是新建分组"
               list="f-group-options"
             />
             <datalist id="f-group-options">

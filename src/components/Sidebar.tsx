@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { SavedHost } from '../api/types'
 import { useHosts } from '../store/hosts'
@@ -19,6 +19,9 @@ interface HostGroup {
   hosts: SavedHost[]
 }
 
+/** 侧边栏里正在编辑分组的方式。 */
+type GroupEdit = { mode: 'create' } | { mode: 'rename'; name: string } | null
+
 export default function Sidebar({
   onConnect,
   onSelectHost,
@@ -29,39 +32,120 @@ export default function Sidebar({
   const toggleSidebar = useUi((s) => s.toggleSidebar)
   const filePanelOpen = useUi((s) => s.filePanelOpen)
   const setFilePanel = useUi((s) => s.setFilePanel)
+  const push = useUi((s) => s.push)
+  const reportError = useUi((s) => s.reportError)
 
   const hosts = useHosts((s) => s.hosts)
+  const registry = useHosts((s) => s.groups)
   const removeHost = useHosts((s) => s.remove)
+  const createGroup = useHosts((s) => s.createGroup)
+  const renameGroup = useHosts((s) => s.renameGroup)
+  const removeGroup = useHosts((s) => s.removeGroup)
 
   const [hoverHost, setHoverHost] = useState<string | null>(null)
+  const [hoverGroup, setHoverGroup] = useState<string | null>(null)
   /** 折叠起来的分组名。 */
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
+  /** 正在新建 / 改名的分组。 */
+  const [groupEdit, setGroupEdit] = useState<GroupEdit>(null)
+  const [groupDraft, setGroupDraft] = useState('')
+  const groupInputRef = useRef<HTMLInputElement>(null)
 
   /**
    * 主机按分组归拢。
    *
-   * 没有分组的排在最前面（就是原来那个 `// HOSTS` 区），
-   * 其余分组按第一次出现的先后排列 —— 用户自己添加主机的顺序就是分组顺序。
+   * 分组清单（`groups`）是权威：它决定顺序，也允许**空分组**存在 ——
+   * 用户可以先把「生产 / 测试」建好，往里放机器时直接选。
+   * 清单里没有、但主机上写着的分组（比如老版本留下的）照样显示，
+   * 追加在清单后面。
    */
   const groups = useMemo<HostGroup[]>(() => {
     const map = new Map<string, SavedHost[]>()
+    for (const name of registry) map.set(name, [])
     for (const h of hosts) {
       const key = (h.group ?? '').trim()
       const bucket = map.get(key)
       if (bucket) bucket.push(h)
       else map.set(key, [h])
     }
-    const ordered = [...map.entries()]
-    // 没分组的排最前，其余按首次出现顺序
-      .sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : 0))
-      .map(([name, list]) => ({ name, hosts: list }))
-    return ordered
-  }, [hosts])
+    const entries = [...map.entries()]
+    // 没分组的排最前，其余按清单顺序（清单外新出现的接在后面）
+    const ungrouped = entries.filter(([name]) => name === '')
+    const rest = entries.filter(([name]) => name !== '')
+    return [...ungrouped, ...rest].map(([name, list]) => ({ name, hosts: list }))
+  }, [hosts, registry])
 
   const toggleGroup = (name: string) =>
     setCollapsedGroups((prev) =>
       prev.includes(name) ? prev.filter((g) => g !== name) : [...prev, name],
     )
+
+  /* ── 分组：新建 / 改名 / 删除 ───────────────────── */
+  useEffect(() => {
+    if (!groupEdit) return
+    const t = window.setTimeout(() => {
+      groupInputRef.current?.focus()
+      groupInputRef.current?.select()
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [groupEdit])
+
+  const startCreateGroup = () => {
+    setGroupDraft('')
+    setGroupEdit({ mode: 'create' })
+  }
+
+  const startRenameGroup = (name: string) => {
+    setGroupDraft(name)
+    setGroupEdit({ mode: 'rename', name })
+  }
+
+  const commitGroupEdit = () => {
+    const edit = groupEdit
+    const next = groupDraft.trim()
+    setGroupEdit(null)
+    if (!edit || !next) return
+
+    if (edit.mode === 'create') {
+      if (registry.includes(next)) {
+        push({ kind: 'info', title: '分组已存在', message: `「${next}」已经在列表里了` })
+        return
+      }
+      void createGroup(next)
+        .then(() => {
+          push({ kind: 'success', title: '已新建分组', message: next })
+        })
+        .catch((e) => reportError('新建分组失败', e))
+      return
+    }
+
+    const old = edit.name
+    if (next === old) return
+    void renameGroup(old, next)
+      .then(() => {
+        // 折叠状态跟着改名走，不然组一改名就自动展开了。
+        setCollapsedGroups((prev) => prev.map((g) => (g === old ? next : g)))
+        push({
+          kind: 'success',
+          title: '分组已改名',
+          message: `「${old}」→「${next}」`,
+        })
+      })
+      .catch((e) => reportError('分组改名失败', e))
+  }
+
+  const deleteGroup = (g: HostGroup) => {
+    void removeGroup(g.name)
+      .then(() => {
+        setCollapsedGroups((prev) => prev.filter((x) => x !== g.name))
+        push({
+          kind: 'info',
+          title: '已删除分组',
+          message: `「${g.name}」的 ${g.hosts.length} 台主机回到未分组`,
+        })
+      })
+      .catch((e) => reportError('删除分组失败', e))
+  }
 
   if (collapsed) {
     return (
@@ -153,37 +237,115 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-section sidebar-section-grow">
-        {hosts.length === 0 ? (
-          <>
-            <div className="meta sidebar-section-head">
-              HOSTS <span className="sidebar-count">{hosts.length}</span>
-            </div>
-            <div className="sidebar-empty">
-              <Icon name="server" size={18} />
-              <span>还没有保存的主机</span>
-            </div>
-          </>
+        {groups.length === 0 ? (
+          <div className="sidebar-empty">
+            <Icon name="server" size={18} />
+            <span>还没有保存的主机</span>
+          </div>
         ) : (
           groups.map((g) => {
             const isCollapsed = collapsedGroups.includes(g.name)
+            const isRenaming = groupEdit?.mode === 'rename' && groupEdit.name === g.name
             const title = g.name || 'HOSTS'
             return (
               <div className="sidebar-group" key={g.name || '__none'}>
                 <div
                   className={`meta sidebar-section-head sidebar-group-head${isCollapsed ? ' is-collapsed' : ''}`}
-                  onClick={() => toggleGroup(g.name)}
+                  onClick={() => !isRenaming && toggleGroup(g.name)}
+                  onMouseEnter={() => setHoverGroup(g.name)}
+                  onMouseLeave={() => setHoverGroup(null)}
                   title={g.name ? '折叠 / 展开分组' : undefined}
                 >
                   <span className="sidebar-group-caret">
                     <Icon name="chevron-left" size={11} />
                   </span>
-                  {title} <span className="sidebar-count">{g.hosts.length}</span>
+                  {isRenaming ? (
+                    <input
+                      ref={groupInputRef}
+                      className="group-rename"
+                      value={groupDraft}
+                      onChange={(e) => setGroupDraft(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onBlur={commitGroupEdit}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          commitGroupEdit()
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setGroupEdit(null)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="sidebar-group-title">{title}</span>
+                  )}
+                  <span className="sidebar-count">{g.hosts.length}</span>
+                  {g.name && !isRenaming && hoverGroup === g.name && (
+                    <span className="sidebar-group-actions">
+                      <button
+                        className="icon-btn"
+                        title="重命名分组"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startRenameGroup(g.name)
+                        }}
+                      >
+                        <Icon name="edit" size={11} />
+                      </button>
+                      <button
+                        className="icon-btn icon-btn-danger"
+                        title="删除分组（里面的主机回到未分组）"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteGroup(g)
+                        }}
+                      >
+                        <Icon name="trash" size={11} />
+                      </button>
+                    </span>
+                  )}
                 </div>
                 {!isCollapsed && <div className="sidebar-list">{g.hosts.map(renderHost)}</div>}
               </div>
             )
           })
         )}
+
+        {/* 新建分组 */}
+        <div className="sidebar-group-add">
+          {groupEdit?.mode === 'create' ? (
+            <input
+              ref={groupInputRef}
+              className="group-rename"
+              value={groupDraft}
+              placeholder="分组名"
+              onChange={(e) => setGroupDraft(e.target.value)}
+              onBlur={commitGroupEdit}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitGroupEdit()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setGroupEdit(null)
+                }
+              }}
+            />
+          ) : (
+            <button
+              className="meta sidebar-group-add-btn"
+              onClick={startCreateGroup}
+              title="新建一个分组"
+            >
+              <Icon name="plus" size={11} />
+              新建分组
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="sidebar-foot">

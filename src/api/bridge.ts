@@ -15,6 +15,7 @@ import type {
   ConnectRequest,
   CredentialBackend,
   CredentialStoreInfo,
+  HostList,
   RemoteFile,
   SavedHost,
   SessionClosedEvent,
@@ -90,10 +91,17 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 /* ── 主机 ───────────────────────────────────────────── */
 
 export const hostApi = {
-  list: () => call<SavedHost[]>('host_list'),
+  list: () => call<HostList>('host_list'),
   save: (host: SavedHost, secret?: { password?: string; passphrase?: string }) =>
-    call<SavedHost[]>('host_save', { request: { host, ...secret } }),
-  remove: (hostId: string) => call<SavedHost[]>('host_delete', { hostId }),
+    call<HostList>('host_save', { request: { host, ...secret } }),
+  remove: (hostId: string) => call<HostList>('host_delete', { hostId }),
+  /** 新建分组（可以是空分组）。 */
+  createGroup: (name: string) => call<HostList>('host_group_create', { name }),
+  /** 重命名分组：组里的主机一起改到新名字。 */
+  renameGroup: (oldName: string, newName: string) =>
+    call<HostList>('host_group_rename', { oldName, newName }),
+  /** 删除分组：组里的主机回到「未分组」，主机本身不删。 */
+  removeGroup: (name: string) => call<HostList>('host_group_remove', { name }),
 }
 
 /* ── 会话 ───────────────────────────────────────────── */

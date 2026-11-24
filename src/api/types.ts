@@ -49,6 +49,17 @@ export interface HostSaveRequest {
   passphrase?: string
 }
 
+/**
+ * 主机列表 + 分组清单。
+ *
+ * `groups` 里可以有**空分组**（还没放主机），用户可以先把「生产 / 测试」
+ * 建好，往里放机器时直接选。
+ */
+export interface HostList {
+  hosts: SavedHost[]
+  groups: string[]
+}
+
 /** 结构化错误载荷，与 Rust 的 `AppErrorPayload` 对应。 */
 export interface AppErrorPayload {
   code: string

@@ -38,7 +38,13 @@ pub struct SavedHost {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HostsFile {
     version: u32,
+    #[serde(default)]
     hosts: Vec<SavedHost>,
+    /// 分组清单与显示顺序。**可以包含空分组** —— 用户先把组建好，
+    /// 往里放机器时直接选。旧文件没有这一项时按空处理，
+    /// 分组仍能从主机上的 `group` 字段推出来。
+    #[serde(default)]
+    groups: Vec<String>,
 }
 
 /// `hosts.json` 的读写器。
@@ -60,33 +66,63 @@ impl HostsStore {
 
     /// 读取全部主机。文件不存在时返回空列表，不视为错误。
     pub fn load(&self) -> AppResult<Vec<SavedHost>> {
+        Ok(self.load_file()?.hosts)
+    }
+
+    /// 读取分组清单（名字与顺序）。
+    pub fn groups(&self) -> AppResult<Vec<String>> {
+        Ok(self.load_file()?.groups)
+    }
+
+    /// 读整个文件。
+    fn load_file(&self) -> AppResult<HostsFile> {
         if !self.path.exists() {
-            return Ok(Vec::new());
+            return Ok(HostsFile {
+                version: 1,
+                hosts: Vec::new(),
+                groups: Vec::new(),
+            });
         }
         let raw = std::fs::read_to_string(&self.path)?;
         if raw.trim().is_empty() {
-            return Ok(Vec::new());
+            return Ok(HostsFile {
+                version: 1,
+                hosts: Vec::new(),
+                groups: Vec::new(),
+            });
         }
         match serde_json::from_str::<HostsFile>(&raw) {
-            Ok(f) => Ok(f.hosts),
+            Ok(f) => Ok(f),
             Err(e) => {
                 // 文件损坏时不让整个应用起不来：备份后从空列表开始。
                 let backup = self.path.with_extension("json.corrupt");
                 let _ = std::fs::rename(&self.path, &backup);
                 tracing::warn!(error = %e, "hosts.json 解析失败，已备份并重置");
-                Ok(Vec::new())
+                Ok(HostsFile {
+                    version: 1,
+                    hosts: Vec::new(),
+                    groups: Vec::new(),
+                })
             }
         }
     }
 
     /// 原子写入：先写临时文件再重命名，避免中途崩溃留下半截 JSON。
     pub fn save(&self, hosts: &[SavedHost]) -> AppResult<()> {
+        // 保留原有的分组清单，别被一次主机改动冲掉。
+        let groups = self.load_file()?.groups;
+        self.save_all(hosts, &groups)
+    }
+
+    /// 连同分组清单一起写入。
+    fn save_all(&self, hosts: &[SavedHost], groups: &[String]) -> AppResult<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let file = HostsFile {
             version: 1,
             hosts: hosts.to_vec(),
+            groups: groups.to_vec(),
         };
         let body = serde_json::to_string_pretty(&file)
             .map_err(|e| AppError::Internal(format!("序列化主机列表失败: {e}")))?;
@@ -98,22 +134,88 @@ impl HostsStore {
     }
 
     /// 新增或更新（按 id 匹配）。
-    pub fn upsert(&self, host: &SavedHost) -> AppResult<Vec<SavedHost>> {
-        let mut hosts = self.load()?;
-        match hosts.iter_mut().find(|h| h.id == host.id) {
+    ///
+    /// 顺带把主机所属的分组登记进清单 —— 这样分组的位置是稳定的，
+    /// 之后再往里加机器不会把整组挤到后面去。
+    pub fn upsert(&self, host: &SavedHost) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let mut file = self.load_file()?;
+        match file.hosts.iter_mut().find(|h| h.id == host.id) {
             Some(existing) => *existing = host.clone(),
-            None => hosts.push(host.clone()),
+            None => file.hosts.push(host.clone()),
         }
-        self.save(&hosts)?;
-        Ok(hosts)
+        if let Some(group) = host.group.as_deref().map(str::trim) {
+            if !group.is_empty() && !file.groups.iter().any(|g| g == group) {
+                file.groups.push(group.to_string());
+            }
+        }
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
     }
 
-    /// 按 id 删除。
-    pub fn remove(&self, id: &str) -> AppResult<Vec<SavedHost>> {
-        let mut hosts = self.load()?;
-        hosts.retain(|h| h.id != id);
-        self.save(&hosts)?;
-        Ok(hosts)
+    /// 按 id 删除。分组清单不受影响。
+    pub fn remove(&self, id: &str) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let mut file = self.load_file()?;
+        file.hosts.retain(|h| h.id != id);
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
+    }
+
+    /// 新建一个分组。名字重复时什么都不做。
+    pub fn create_group(&self, name: &str) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let name = name.trim();
+        let mut file = self.load_file()?;
+        if !name.is_empty() && !file.groups.iter().any(|g| g == name) {
+            file.groups.push(name.to_string());
+        }
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
+    }
+
+    /// 重命名分组：组里的主机一起改到新名字，清单里的位置也换掉。
+    ///
+    /// 新名字跟已有分组重名时两组自然合并 —— 这正是用户想要的效果，
+    /// 所以这里不做「重名报错」。
+    pub fn rename_group(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let old_name = old_name.trim();
+        let new_name = new_name.trim();
+        let mut file = self.load_file()?;
+
+        for h in file.hosts.iter_mut() {
+            if h.group.as_deref().map(str::trim) == Some(old_name) {
+                h.group = Some(new_name.to_string());
+            }
+        }
+
+        // 清单里换名：已经有同名分组就不重复登记。
+        if let Some(pos) = file.groups.iter().position(|g| g == old_name) {
+            if file.groups.iter().any(|g| g == new_name) {
+                file.groups.remove(pos);
+            } else {
+                file.groups[pos] = new_name.to_string();
+            }
+        }
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
+    }
+
+    /// 删除分组：组里的主机回到「未分组」，**主机本身不删**。
+    pub fn remove_group(&self, name: &str) -> AppResult<(Vec<SavedHost>, Vec<String>)> {
+        let name = name.trim();
+        let mut file = self.load_file()?;
+
+        for h in file.hosts.iter_mut() {
+            if h.group.as_deref().map(str::trim) == Some(name) {
+                h.group = None;
+            }
+        }
+        file.groups.retain(|g| g.trim() != name);
+
+        self.save_all(&file.hosts, &file.groups)?;
+        Ok((file.hosts, file.groups))
     }
 }
 
@@ -207,6 +309,126 @@ mod tests {
             .find(|e| e.get("id").and_then(|i| i.as_str()) == Some("b"))
             .unwrap();
         assert!(plain_entry.get("group").is_none());
+    }
+
+    /// 改分组名：组里的主机一起改，其它组不动。
+    #[test]
+    fn rename_group_moves_all_members() {
+        let store = HostsStore::new(&temp_dir());
+        for (id, group) in [
+            ("a", Some("生产环境")),
+            ("b", Some("生产环境")),
+            ("c", Some("测试环境")),
+            ("d", None),
+        ] {
+            let mut h = sample(id);
+            h.group = group.map(str::to_string);
+            store.upsert(&h).unwrap();
+        }
+
+        let (hosts, groups) = store.rename_group("生产环境", "线上").unwrap();
+        let group_of = |id: &str| {
+            hosts
+                .iter()
+                .find(|h| h.id == id)
+                .and_then(|h| h.group.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(group_of("a"), "线上");
+        assert_eq!(group_of("b"), "线上");
+        assert_eq!(group_of("c"), "测试环境");
+        assert_eq!(group_of("d"), "");
+
+        // 清单里的分组也换名了
+        assert_eq!(groups, vec!["线上".to_string(), "测试环境".to_string()]);
+
+        // 落盘的也是新名字
+        let hosts = store.load().unwrap();
+        assert_eq!(
+            hosts
+                .iter()
+                .find(|h| h.id == "a")
+                .and_then(|h| h.group.clone()),
+            Some("线上".to_string())
+        );
+    }
+
+    /// 删除分组：主机回到未分组，主机本身不删。
+    #[test]
+    fn remove_group_keeps_hosts() {
+        let store = HostsStore::new(&temp_dir());
+        for (id, group) in [("a", Some("生产环境")), ("b", Some("生产环境"))] {
+            let mut h = sample(id);
+            h.group = group.map(str::to_string);
+            store.upsert(&h).unwrap();
+        }
+
+        let (hosts, groups) = store.remove_group("生产环境").unwrap();
+        assert_eq!(hosts.len(), 2, "删除分组不能删掉主机");
+        assert!(hosts.iter().all(|h| h.group.is_none()));
+        assert!(groups.is_empty(), "分组要从清单里消失");
+
+        let hosts = store.load().unwrap();
+        assert_eq!(hosts.len(), 2);
+        assert!(hosts.iter().all(|h| h.group.is_none()));
+    }
+
+    /// 新建分组：可以是空分组 —— 用户先把「生产 / 测试」建好再往里放机器。
+    #[test]
+    fn create_group_allows_empty_group() {
+        let store = HostsStore::new(&temp_dir());
+        let (_, groups) = store.create_group("生产环境").unwrap();
+        assert_eq!(groups, vec!["生产环境".to_string()]);
+
+        // 再建一次同名的不重复
+        let (_, groups) = store.create_group("生产环境").unwrap();
+        assert_eq!(groups.len(), 1);
+
+        // 存在磁盘上
+        assert_eq!(store.groups().unwrap(), vec!["生产环境".to_string()]);
+    }
+
+    /// 主机上的分组名会自动进清单，顺序稳定。
+    #[test]
+    fn upsert_registers_group() {
+        let store = HostsStore::new(&temp_dir());
+        let mut h = sample("a");
+        h.group = Some("测试环境".into());
+        store.upsert(&h).unwrap();
+
+        let mut h2 = sample("b");
+        h2.group = Some("生产环境".into());
+        store.upsert(&h2).unwrap();
+
+        assert_eq!(
+            store.groups().unwrap(),
+            vec!["测试环境".to_string(), "生产环境".to_string()]
+        );
+
+        // 再加一台同组的机器，分组顺序不动
+        let mut h3 = sample("c");
+        h3.group = Some("测试环境".into());
+        store.upsert(&h3).unwrap();
+        assert_eq!(
+            store.groups().unwrap(),
+            vec!["测试环境".to_string(), "生产环境".to_string()]
+        );
+    }
+
+    /// 旧版 hosts.json 没有 groups 字段，也要读得出来。
+    #[test]
+    fn legacy_file_without_groups_still_loads() {
+        let dir = temp_dir();
+        std::fs::write(
+            dir.join("hosts.json"),
+            r#"{"version":1,"hosts":[{"id":"a","label":"旧机器","host":"10.0.0.1","port":22,"username":"root","authType":"password","hasPassword":true,"hasPassphrase":false}]}"#,
+        )
+        .unwrap();
+        let store = HostsStore::new(&dir);
+        let hosts = store.load().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].label, "旧机器");
+        assert!(store.groups().unwrap().is_empty());
     }
 
     /// 缺陷 #1 的回归测试：落盘内容里不能出现任何明文秘密。

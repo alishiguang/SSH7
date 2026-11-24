@@ -21,8 +21,7 @@
     -->
     <script>
       ;(function () {
-        var hosts = [
-          {
+        var hosts = [          {
             id: 'h1',
             label: '生产服务器',
             group: '生产环境',
@@ -68,6 +67,8 @@
             hasPassphrase: false,
           },
         ]
+        // 分组清单：可以有空分组，决定侧边栏里的顺序。
+        var groups = ['生产环境', '测试环境']
 
         function clone(info) {
           return {
@@ -87,7 +88,53 @@
               case 'plugin:event|unlisten':
                 return 1
               case 'host_list':
-                return hosts
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              case 'host_save': {
+                var r = (args && args.request) || {}
+                var h = r.host || {}
+                var idx = hosts.findIndex(function (x) {
+                  return x.id === h.id
+                })
+                if (idx >= 0) hosts[idx] = h
+                else hosts.push(h)
+                if (h.group && groups.indexOf(h.group) < 0) groups.push(h.group)
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
+              case 'host_delete': {
+                var id = args && args.hostId
+                hosts = hosts.filter(function (x) {
+                  return x.id !== id
+                })
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
+              case 'host_group_create': {
+                var name = (args && args.name) || ''
+                if (name && groups.indexOf(name) < 0) groups.push(name)
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
+              case 'host_group_rename': {
+                var oldName = (args && args.oldName) || ''
+                var newName = (args && args.newName) || ''
+                hosts.forEach(function (x) {
+                  if ((x.group || '').trim() === oldName) x.group = newName
+                })
+                var gi = groups.indexOf(oldName)
+                if (gi >= 0) {
+                  if (groups.indexOf(newName) >= 0) groups.splice(gi, 1)
+                  else groups[gi] = newName
+                }
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
+              case 'host_group_remove': {
+                var gname = (args && args.name) || ''
+                hosts.forEach(function (x) {
+                  if ((x.group || '').trim() === gname) x.group = undefined
+                })
+                groups = groups.filter(function (g) {
+                  return g.trim() !== gname
+                })
+                return { hosts: hosts.slice(), groups: groups.slice() }
+              }
               case 'session_connect': {
                 var r = (args && args.request) || {}
                 // 模拟真实握手耗时，好看到「正在连接」那一瞬间的界面。
