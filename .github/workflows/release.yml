@@ -31,7 +31,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.target }}
 
       - run: npm ci
       - run: npm run build
@@ -58,5 +57,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist-release/*.dmg
+          overwrite_files: true
           generate_release_notes: true
           draft: false
