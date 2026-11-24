@@ -7,24 +7,28 @@
 
 export type AuthType = 'password' | 'privateKey'
 
-/** 已保存的主机。**不包含任何秘密**，密码只存在于系统钥匙串。 */
+/** 已保存的主机。**不包含任何秘密**，密码只存在于本机凭据库。 */
 export interface SavedHost {
   id: string
   label: string
+  /** 所属分组，留空表示不分组。 */
+  group?: string
   host: string
   port: number
   username: string
   authType: AuthType
   privateKeyPath?: string
-  /** 钥匙串中是否存有密码 */
+  /** 凭据库中是否存有密码 */
   hasPassword: boolean
-  /** 钥匙串中是否存有私钥口令 */
+  /** 凭据库中是否存有私钥口令 */
   hasPassphrase: boolean
 }
 
 /** 建立连接的请求。 */
 export interface ConnectRequest {
   label?: string
+  /** 保存主机时使用的分组名，留空表示不分组。 */
+  group?: string
   host: string
   port: number
   username: string

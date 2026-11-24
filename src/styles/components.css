@@ -198,7 +198,33 @@
   padding-bottom: 6px;
 }
 
-.session-row,
+/* ── 主机分组 ───────────────────────────────── */
+.sidebar-group + .sidebar-group {
+  margin-top: 10px;
+}
+.sidebar-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur) var(--ease);
+}
+.sidebar-group-head:hover {
+  color: var(--cream-2);
+}
+.sidebar-group-caret {
+  display: inline-flex;
+  align-items: center;
+  color: var(--red);
+  transform: rotate(-90deg);
+  transition: transform var(--dur) var(--ease);
+}
+.sidebar-group-head.is-collapsed .sidebar-group-caret {
+  transform: rotate(0deg);
+}
+
 .host-row {
   display: flex;
   align-items: center;
@@ -208,21 +234,13 @@
   border-left: 2px solid transparent;
   transition: background var(--dur) var(--ease);
 }
-.session-row:hover,
 .host-row:hover {
   background: var(--ink-700);
 }
-.session-row.is-active {
-  background: var(--ink-700);
-  border-left-color: var(--red);
-}
-
-.session-row-body,
 .host-row-body {
   flex: 1;
   min-width: 0;
 }
-.session-row-label,
 .host-row-label {
   font-size: var(--fs-label);
   color: var(--cream);
@@ -230,7 +248,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-row-cwd,
 .host-row-meta {
   font-family: var(--font-mono);
   font-size: calc(9.5px * var(--ui-scale));
@@ -355,6 +372,29 @@
 }
 .tab-close:hover {
   color: var(--red);
+}
+
+/* 拖动排序：拖动中的标签变淡，落点用一条红线标出来 */
+.tab.is-dragging {
+  opacity: 0.45;
+}
+.tab.is-drop-before {
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.tab.is-drop-after {
+  box-shadow: inset -2px 0 0 var(--red);
+}
+
+/* 改名：标签就地变成一个输入框 */
+.tab-rename {
+  width: 130px;
+  padding: 1px 4px;
+  background: var(--ink-900);
+  border: 1px solid var(--red);
+  color: var(--cream);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--ui-scale));
+  outline: none;
 }
 
 /* ── 按钮 ─────────────────────────────────── */

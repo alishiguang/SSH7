@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { sessionApi } from '../api/bridge'
 import type { AuthType, ConnectRequest, SavedHost, TestResult } from '../api/types'
+import { useHosts } from '../store/hosts'
 
 import { Icon } from './Icons'
 
@@ -14,6 +15,7 @@ interface Props {
 
 interface FormState {
   label: string
+  group: string
   host: string
   port: string
   username: string
@@ -26,6 +28,7 @@ interface FormState {
 
 const EMPTY: FormState = {
   label: '',
+  group: '',
   host: '',
   port: '22',
   username: 'root',
@@ -44,10 +47,22 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // 已经用过的分组名，输入框可以直接选，不用每次手打。
+  const hosts = useHosts((s) => s.hosts)
+  const existingGroups = useMemo(() => {
+    const set = new Set<string>()
+    for (const h of hosts) {
+      const g = h.group?.trim()
+      if (g) set.add(g)
+    }
+    return [...set].sort()
+  }, [hosts])
+
   useEffect(() => {
     if (editHost) {
       setForm({
         label: editHost.label,
+        group: editHost.group ?? '',
         host: editHost.host,
         port: String(editHost.port),
         username: editHost.username,
@@ -73,6 +88,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
 
   const buildRequest = (): ConnectRequest => ({
     label: form.label.trim() || `${form.username}@${form.host}`,
+    group: form.group.trim() || undefined,
     host: form.host.trim(),
     port: Number.parseInt(form.port, 10) || 22,
     username: form.username.trim(),
@@ -195,6 +211,25 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
           </div>
 
           <div className="field">
+            <label className="field-label" htmlFor="f-group">
+              分组
+            </label>
+            <input
+              id="f-group"
+              className="input"
+              value={form.group}
+              onChange={(e) => set('group', e.target.value)}
+              placeholder="留空不分组，例如「生产环境」"
+              list="f-group-options"
+            />
+            <datalist id="f-group-options">
+              {existingGroups.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+          </div>
+
+          <div className="field">
             <label className="field-label" htmlFor="f-user">
               用户名
             </label>
@@ -239,7 +274,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
                 autoComplete="off"
               />
               {isEdit && editHost?.hasPassword && !form.password && (
-                <span className="field-note">已使用钥匙串中保存的密码</span>
+                <span className="field-note">已使用已保存的密码</span>
               )}
             </div>
           ) : (
@@ -271,7 +306,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
                   autoComplete="off"
                 />
                 {isEdit && editHost?.hasPassphrase && !form.passphrase && (
-                  <span className="field-note">已使用钥匙串中保存的口令</span>
+                  <span className="field-note">已使用已保存的口令</span>
                 )}
               </div>
             </>
@@ -305,7 +340,7 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
               onChange={(e) => set('save', e.target.checked)}
             />
             <span className="checkbox-box" />
-            <span>保存到主机列表（密码存入系统钥匙串）</span>
+            <span>保存到主机列表（密码加密后存在本机）</span>
           </label>
 
           <div className="modal-actions">

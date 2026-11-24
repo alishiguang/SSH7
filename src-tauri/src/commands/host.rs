@@ -23,6 +23,7 @@ fn to_dto(h: SavedHost) -> SavedHostDto {
     SavedHostDto {
         id: h.id,
         label: h.label,
+        group: h.group,
         host: h.host,
         port: h.port,
         username: h.username,
@@ -37,6 +38,7 @@ fn from_dto(dto: &SavedHostDto) -> SavedHost {
     SavedHost {
         id: dto.id.clone(),
         label: dto.label.clone(),
+        group: dto.group.clone(),
         host: dto.host.clone(),
         port: dto.port,
         username: dto.username.clone(),

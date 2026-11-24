@@ -16,7 +16,7 @@ use crate::types::{AuthType, ConnectRequest, SessionInfo, TestResult};
 ///
 /// 密码与私钥口令的来源优先级：
 /// 1. 本次请求里显式传入的值；
-/// 2. 钥匙串中为该 `host_id` 保存的值（复��已保存主机时走这条路径）。
+/// 2. 凭据库中为该 `host_id` 保存的值（复��已保存主机时走这条路径）。
 ///
 /// 这样前端在任何情况下都拿不到明文秘密。
 fn resolve_credential(request: &ConnectRequest, store: &SecretStore) -> AppResult<Credential> {
@@ -32,7 +32,7 @@ fn resolve_credential(request: &ConnectRequest, store: &SecretStore) -> AppResul
             match password {
                 Some(p) => Ok(Credential::Password(p)),
                 None => Err(AppError::AuthFailed(
-                    "未提供密码，且钥匙串中没有保存该主机的密码".into(),
+                    "未提供密码，且本机没有保存该主机的密码".into(),
                 )),
             }
         }
@@ -98,7 +98,7 @@ pub async fn session_connect(
     let info = session.info.clone();
     state.sessions.insert(&info.session_id, session);
 
-    // 保存主机与秘密（秘密进钥匙串，hosts.json 不含明文）。
+    // 保存主机与秘密（秘密进凭据库，hosts.json 不含明文）。
     if request.save.unwrap_or(false) {
         let host_id = request
             .host_id
@@ -108,6 +108,7 @@ pub async fn session_connect(
         let saved = crate::storage::hosts::SavedHost {
             id: host_id.clone(),
             label: label.clone(),
+            group: request.group.clone().filter(|g| !g.trim().is_empty()),
             host: host.clone(),
             port,
             username: username.clone(),
@@ -118,7 +119,7 @@ pub async fn session_connect(
         };
         state.hosts.upsert(&saved)?;
 
-        // 把本次使用的密码写进钥匙串，供下次复用。
+        // 把本次使用的密码写进凭据库，供下次复用。
         if let Credential::Password(pw) = &credential {
             let _ = state
                 .secrets
@@ -233,13 +234,14 @@ pub async fn session_attach(state: State<'_, AppState>, session_id: String) -> A
 pub async fn session_clone(
     state: State<'_, AppState>,
     session_id: String,
+    label: Option<String>,
 ) -> AppResult<SessionInfo> {
     let source = state
         .sessions
         .get(&session_id)
         .ok_or_else(|| AppError::SessionGone("会话不存在或已关闭".into()))?;
 
-    let session = client::clone_session(&state.app, &source).await?;
+    let session = client::clone_session(&state.app, &source, label.as_deref()).await?;
     let info = session.info.clone();
     state.sessions.insert(&info.session_id, session);
     Ok(info)

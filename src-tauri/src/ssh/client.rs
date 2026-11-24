@@ -342,8 +342,17 @@ async fn detect_shell(handle: &Handle<ClientHandler>) -> Option<crate::ssh::trac
 ///
 /// 凭据直接复用 Rust 侧持有的副本，**密码不会回到前端**，
 /// 因此克隆操作不需要用户重新输入密码。
-pub async fn clone_session(app: &tauri::AppHandle, source: &Session) -> AppResult<Arc<Session>> {
-    let label = format!("{} · 副本", source.info.label);
+pub async fn clone_session(
+    app: &tauri::AppHandle,
+    source: &Session,
+    base_label: Option<&str>,
+) -> AppResult<Arc<Session>> {
+    // 用户可以在标签栏里给会话改名，克隆时沿用那个名字。
+    let base = base_label
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(source.info.label.as_str());
+    let label = format!("{base} · 副本");
     connect(
         app,
         &source.info.host,

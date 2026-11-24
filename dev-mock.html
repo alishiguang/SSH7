@@ -25,6 +25,7 @@
           {
             id: 'h1',
             label: '生产服务器',
+            group: '生产环境',
             host: '10.0.0.8',
             port: 22,
             username: 'root',
@@ -35,6 +36,7 @@
           {
             id: 'h2',
             label: '跳板机',
+            group: '生产环境',
             host: '10.0.0.9',
             port: 2222,
             username: 'ops',
@@ -42,6 +44,28 @@
             privateKeyPath: '~/.ssh/id_ed25519',
             hasPassword: false,
             hasPassphrase: true,
+          },
+          {
+            id: 'h3',
+            label: '测试机',
+            group: '测试环境',
+            host: '10.0.0.10',
+            port: 22,
+            username: 'dev',
+            authType: 'privateKey',
+            privateKeyPath: '~/.ssh/id_ed25519',
+            hasPassword: false,
+            hasPassphrase: false,
+          },
+          {
+            id: 'h4',
+            label: '本地虚拟机',
+            host: '127.0.0.1',
+            port: 2222,
+            username: 'vagrant',
+            authType: 'password',
+            hasPassword: true,
+            hasPassphrase: false,
           },
         ]
 

@@ -1,8 +1,8 @@
 //! 已保存主机的本地存储。
 //!
 //! 安全约束（缺陷 #1）：**本文件永远不包含密码或私钥口令**。
-//! 秘密只保存在系统钥匙串里，`hosts.json` 仅保存「是否已保存秘密」
-//! 这样的布尔标记，用于界面提示与钥匙串条目的清理。
+//! 秘密只保存在凭据库里，`hosts.json` 仅保存「是否已保存秘密」
+//! 这样的布尔标记，用于界面提示与凭据库条目的清理。
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -17,16 +17,19 @@ pub use crate::types::AuthType;
 pub struct SavedHost {
     pub id: String,
     pub label: String,
+    /// 所属分组。留空表示不分组，界面里排在最前面。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
     pub auth_type: AuthType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub private_key_path: Option<String>,
-    /// 钥匙串中是否存在该主机的密码。
+    /// 凭据库中是否存在该主机的密码。
     #[serde(default)]
     pub has_password: bool,
-    /// 钥匙串中是否存在该主机的私钥口令。
+    /// 凭据库中是否存在该主机的私钥口令。
     #[serde(default)]
     pub has_passphrase: bool,
 }
@@ -133,6 +136,7 @@ mod tests {
         SavedHost {
             id: id.into(),
             label: "test".into(),
+            group: None,
             host: "127.0.0.1".into(),
             port: 22,
             username: "root".into(),
@@ -173,6 +177,36 @@ mod tests {
         let hosts = store.load().unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].label, "changed");
+    }
+
+    /// 分组要能原样存回来，没分组的旧记录也不能因此读不出来。
+    #[test]
+    fn group_round_trips() {
+        let dir = temp_dir();
+        let store = HostsStore::new(&dir);
+
+        let mut grouped = sample("a");
+        grouped.group = Some("生产环境".into());
+        store.upsert(&grouped).unwrap();
+
+        let mut plain = sample("b");
+        plain.group = None;
+        store.upsert(&plain).unwrap();
+
+        let hosts = store.load().unwrap();
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].group.as_deref(), Some("生产环境"));
+        assert_eq!(hosts[1].group, None);
+
+        // 没分组的主机不往 hosts.json 里塞空字段。
+        let raw = std::fs::read_to_string(dir.join("hosts.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let entries = json.get("hosts").and_then(|h| h.as_array()).unwrap();
+        let plain_entry = entries
+            .iter()
+            .find(|e| e.get("id").and_then(|i| i.as_str()) == Some("b"))
+            .unwrap();
+        assert!(plain_entry.get("group").is_none());
     }
 
     /// 缺陷 #1 的回归测试：落盘内容里不能出现任何明文秘密。

@@ -20,6 +20,9 @@ pub enum AuthType {
 pub struct ConnectRequest {
     #[serde(default)]
     pub label: Option<String>,
+    /// 保存主机时使用的分组名，留空表示不分组。
+    #[serde(default)]
+    pub group: Option<String>,
     pub host: String,
     #[serde(default)]
     pub port: Option<u16>,
@@ -152,6 +155,9 @@ pub struct HostSaveRequest {
 pub struct SavedHostDto {
     pub id: String,
     pub label: String,
+    /// 所属分组，留空表示不分组。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
