@@ -393,32 +393,10 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-tools">
-        {groupEdit?.mode === 'create' ? (
-          <input
-            ref={groupInputRef}
-            className="group-rename tool-input"
-            value={groupDraft}
-            placeholder="分组名"
-            onChange={(e) => setGroupDraft(e.target.value)}
-            onBlur={commitGroupEdit}
-            onKeyDown={(e) => {
-              e.stopPropagation()
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitGroupEdit()
-              } else if (e.key === 'Escape') {
-                e.preventDefault()
-                committingRef.current = true
-                setGroupEdit(null)
-              }
-            }}
-          />
-        ) : (
-          <button className="tool-btn" onClick={startCreateGroup} title="新建一个分组">
-            <Icon name="plus" size={12} />
-            <span>分组</span>
-          </button>
-        )}
+        <button className="tool-btn" onClick={startCreateGroup} title="新建一个分组">
+          <Icon name="plus" size={12} />
+          <span>分组</span>
+        </button>
         <button className="tool-btn tool-btn-primary" onClick={onConnect}>
           <Icon name="plus" size={12} />
           <span>连接</span>
@@ -434,13 +412,13 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-section sidebar-section-grow">
-        {groups.length === 0 ? (
+        {groups.length === 0 && groupEdit?.mode !== 'create' && (
           <div className="sidebar-empty">
             <Icon name="server" size={18} />
             <span>还没有保存的主机</span>
           </div>
-        ) : (
-          groups.map((g) => {
+        )}
+        {groups.map((g) => {
             const isCollapsed = collapsedGroups.includes(g.name)
             const isRenaming = groupEdit?.mode === 'rename' && groupEdit.name === g.name
             const title = g.name || 'HOSTS'
@@ -543,7 +521,40 @@ export default function Sidebar({
                 {!isCollapsed && <div className="sidebar-list">{g.hosts.map(renderHost)}</div>}
               </div>
             )
-          })
+          })}
+
+        {/* 新建分组：在列表最下面加一行，就地改名。 */}
+        {groupEdit?.mode === 'create' && (
+          <div className="sidebar-group">
+            <div className="meta sidebar-section-head sidebar-group-new">
+              <span className="sidebar-group-caret">
+                <Icon name="chevron-left" size={11} />
+              </span>
+              <input
+                ref={groupInputRef}
+                className="group-rename"
+                value={groupDraft}
+                placeholder="分组名"
+                onChange={(e) => setGroupDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onBlur={commitGroupEdit}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitGroupEdit()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    // 取消：标记成已提交，免得随后那声 blur 又把它建出来。
+                    committingRef.current = true
+                    setGroupEdit(null)
+                  }
+                }}
+              />
+              <span className="sidebar-count">0</span>
+            </div>
+          </div>
         )}
       </div>
 

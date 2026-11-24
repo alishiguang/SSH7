@@ -190,6 +190,32 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
 
         <form className="modal-body" onSubmit={handleSubmit}>
           <div className="field">
+            <label className="field-label" htmlFor="f-group">
+              分组
+            </label>
+            <input
+              id="f-group"
+              className="input"
+              value={form.group}
+              onChange={(e) => set('group', e.target.value)}
+              placeholder="留空不分组；填新名字就是新建分组"
+              list="f-group-options"
+            />
+            <datalist id="f-group-options">
+              {existingGroups.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <span className="field-note">
+              {isEdit
+                ? '可改；清空即移出分组'
+                : defaultGroup
+                  ? `默认在「${defaultGroup}」分组`
+                  : '默认在 HOSTS（未分组）'}
+            </span>
+          </div>
+
+          <div className="field">
             <label className="field-label" htmlFor="f-label">
               名称
             </label>
@@ -229,32 +255,6 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
                 inputMode="numeric"
               />
             </div>
-          </div>
-
-          <div className="field">
-            <label className="field-label" htmlFor="f-group">
-              分组
-            </label>
-            <input
-              id="f-group"
-              className="input"
-              value={form.group}
-              onChange={(e) => set('group', e.target.value)}
-              placeholder="留空不分组；填新名字就是新建分组"
-              list="f-group-options"
-            />
-            <datalist id="f-group-options">
-              {existingGroups.map((g) => (
-                <option key={g} value={g} />
-              ))}
-            </datalist>
-            <span className="field-note">
-              {isEdit
-                ? '可改；清空即移出分组'
-                : defaultGroup
-                  ? `默认在「${defaultGroup}」分组`
-                  : '默认在 HOSTS（未分组）'}
-            </span>
           </div>
 
           <div className="field">
