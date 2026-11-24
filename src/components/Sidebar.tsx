@@ -50,6 +50,8 @@ export default function Sidebar({
   const [groupEdit, setGroupEdit] = useState<GroupEdit>(null)
   const [groupDraft, setGroupDraft] = useState('')
   const groupInputRef = useRef<HTMLInputElement>(null)
+  /** 本轮编辑是否已经提交过（防止 blur 与回车重复提交）。 */
+  const committingRef = useRef(false)
 
   /**
    * 主机按分组归拢。
@@ -91,16 +93,21 @@ export default function Sidebar({
   }, [groupEdit])
 
   const startCreateGroup = () => {
+    committingRef.current = false
     setGroupDraft('')
     setGroupEdit({ mode: 'create' })
   }
 
   const startRenameGroup = (name: string) => {
+    committingRef.current = false
     setGroupDraft(name)
     setGroupEdit({ mode: 'rename', name })
   }
 
   const commitGroupEdit = () => {
+    // 回车提交后输入框会被卸载，可能再触发一次 blur —— 只提交一次。
+    if (committingRef.current) return
+    committingRef.current = true
     const edit = groupEdit
     const next = groupDraft.trim()
     setGroupEdit(null)
@@ -275,6 +282,8 @@ export default function Sidebar({
                           commitGroupEdit()
                         } else if (e.key === 'Escape') {
                           e.preventDefault()
+                          // 取消：标记成已提交，免得随后那声 blur 又把它改回去。
+                          committingRef.current = true
                           setGroupEdit(null)
                         }
                       }}
@@ -331,6 +340,7 @@ export default function Sidebar({
                   commitGroupEdit()
                 } else if (e.key === 'Escape') {
                   e.preventDefault()
+                  committingRef.current = true
                   setGroupEdit(null)
                 }
               }}
