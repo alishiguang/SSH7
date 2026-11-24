@@ -13,6 +13,8 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AppErrorPayload,
   ConnectRequest,
+  CredentialBackend,
+  CredentialStoreInfo,
   RemoteFile,
   SavedHost,
   SessionClosedEvent,
@@ -103,6 +105,16 @@ export const sftpApi = {
   pickFiles: () => call<string[]>('sftp_pick_files'),
   pickDirectory: () => call<string | null>('sftp_pick_directory'),
   pickUploadFolder: () => call<string | null>('sftp_pick_upload_folder'),
+}
+
+/* ── 凭据存储 ───────────────────────────────────────── */
+
+export const credentialApi = {
+  /** 查询当前用的凭据存储后端。 */
+  info: () => call<CredentialStoreInfo>('credential_store_info'),
+  /** 切换后端，已保存的秘密会一起搬过去。 */
+  set: (backend: CredentialBackend) =>
+    call<CredentialStoreInfo>('credential_store_set', { backend }),
 }
 
 /* ── 事件 ───────────────────────────────────────────── */

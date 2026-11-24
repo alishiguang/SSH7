@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { credentialApi } from '../api/bridge'
+import type { CredentialBackend, CredentialStoreInfo } from '../api/types'
 import {
   TERMINAL_FONT_DEFAULT,
   TERMINAL_FONT_MAX,
@@ -16,10 +18,17 @@ interface Props {
   onClose: () => void
 }
 
+/** 两种后端的说明文案。 */
+const BACKEND_NOTES: Record<CredentialBackend, string> = {
+  vault: 'AES-256-GCM 加密，不弹窗',
+  keyring: '系统托管，更安全',
+}
+
 /**
  * 设置面板。
  *
- * 只放**显示偏好**（字号、界面缩放），不涉及任何凭据。
+ * 显示偏好（字号、界面缩放）与凭据存储位置。
+ * 这里只切换**存放位置**，任何时候都拿不到明文密码。
  */
 export default function SettingsPanel({ onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -29,6 +38,39 @@ export default function SettingsPanel({ onClose }: Props) {
   const nudgeTerminalFontSize = useSettings((s) => s.nudgeTerminalFontSize)
   const nudgeUiScale = useSettings((s) => s.nudgeUiScale)
   const reset = useSettings((s) => s.reset)
+
+  const [store, setStore] = useState<CredentialStoreInfo | null>(null)
+  const [storeError, setStoreError] = useState<string | null>(null)
+  const [switching, setSwitching] = useState(false)
+
+  // 打开时读一次当前后端。
+  useEffect(() => {
+    let alive = true
+    credentialApi
+      .info()
+      .then((info) => {
+        if (alive) setStore(info)
+      })
+      .catch((e) => {
+        if (alive) setStoreError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const switchBackend = useCallback(async (backend: CredentialBackend) => {
+    setSwitching(true)
+    setStoreError(null)
+    try {
+      const info = await credentialApi.set(backend)
+      setStore(info)
+    } catch (e) {
+      setStoreError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSwitching(false)
+    }
+  }, [])
 
   // 点击别处或按 Esc 关闭。
   useEffect(() => {
@@ -115,6 +157,38 @@ export default function SettingsPanel({ onClose }: Props) {
           {TERMINAL_FONT_DEFAULT} px / {Math.round(UI_SCALE_DEFAULT * 100)}%
         </span>
       </button>
+
+      <div className="settings-section">
+        <span className="meta">// CREDENTIALS</span>
+        <div className="settings-cred">
+          {(['vault', 'keyring'] as CredentialBackend[]).map((b) => {
+            const active = store?.backend === b
+            const disabled = switching || (b === 'keyring' && store?.keyringAvailable === false)
+            return (
+              <button
+                key={b}
+                className={`settings-cred-option${active ? ' is-active' : ''}`}
+                disabled={disabled}
+                onClick={() => void switchBackend(b)}
+              >
+                <span className="settings-cred-name">
+                  {b === 'vault' ? '本地加密文件' : '系统钥匙串'}
+                </span>
+                <span className="settings-cred-note">
+                  {b === 'keyring' && store?.keyringAvailable === false
+                    ? '本机不可用'
+                    : BACKEND_NOTES[b]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="settings-cred-tip">
+          macOS 上未签名的应用每次升级都会被系统钥匙串要求重新授权，弹窗很烦；
+          「本地加密文件」不会弹窗，密码以 AES-256-GCM 加密存在应用目录里。
+        </p>
+        {storeError && <p className="settings-cred-tip is-error">{storeError}</p>}
+      </div>
 
       <div className="settings-section">
         <span className="meta">// SHORTCUTS</span>

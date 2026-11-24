@@ -54,6 +54,22 @@ export interface AppErrorPayload {
   detail?: string
 }
 
+/** 凭据存储后端。 */
+export type CredentialBackend = 'keyring' | 'vault'
+
+/** 凭据存储信息，与 Rust 的 `CredentialStoreInfo` 对应。 */
+export interface CredentialStoreInfo {
+  backend: CredentialBackend
+  /** 当前后端的展示名。 */
+  backendLabel: string
+  /** 系统钥匙串是否可用（Linux 上可能没有 Secret Service）。 */
+  keyringAvailable: boolean
+  /** 当前后端是不是该平台的默认值。 */
+  isDefault: boolean
+  /** 该平台的默认后端。 */
+  defaultBackend: CredentialBackend
+}
+
 /** 连通性测试结果。 */
 export interface TestResult {
   ok: boolean

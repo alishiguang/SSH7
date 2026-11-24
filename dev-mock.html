@@ -106,6 +106,24 @@
                     modifiedAt: 1750000000,
                   },
                 ]
+              case 'credential_store_info':
+                return {
+                  backend: 'vault',
+                  backendLabel: '本地加密文件',
+                  keyringAvailable: true,
+                  isDefault: true,
+                  defaultBackend: 'vault',
+                }
+              case 'credential_store_set': {
+                var b = (args && args.backend) || 'vault'
+                return {
+                  backend: b,
+                  backendLabel: b === 'keyring' ? '系统钥匙串' : '本地加密文件',
+                  keyringAvailable: true,
+                  isDefault: b === 'vault',
+                  defaultBackend: 'vault',
+                }
+              }
               case 'sftp_pick_files':
                 return []
               case 'sftp_pick_directory':

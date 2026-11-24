@@ -1369,6 +1369,57 @@
   font-size: calc(9.5px * var(--ui-scale));
 }
 
+/* 凭据存储方式 */
+.settings-cred {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+.settings-cred-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  text-align: left;
+  color: var(--cream-2);
+  background: var(--ink-750);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.settings-cred-option:hover:not(:disabled) {
+  border-color: var(--cream-3);
+}
+.settings-cred-option.is-active {
+  color: var(--cream);
+  border-color: var(--red);
+  background: var(--red-wash);
+}
+.settings-cred-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.settings-cred-name {
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+.settings-cred-note {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--cream-3);
+  letter-spacing: 0.02em;
+}
+.settings-cred-tip {
+  margin: 8px 0 0;
+  color: var(--cream-3);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+}
+.settings-cred-tip.is-error {
+  color: var(--red);
+}
+
 .settings-foot {
   margin-top: 12px;
   padding-top: 9px;
