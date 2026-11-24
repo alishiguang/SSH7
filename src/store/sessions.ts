@@ -25,6 +25,8 @@ interface SessionsStore {
   /** 新建一个「连接中」的占位会话 */
   begin: (s: Omit<SessionState, 'status'>) => void
   patch: (id: string, patch: Partial<SessionState>) => void
+  /** 用真实会话替换占位会话（连接建立后调用）。 */
+  replace: (oldId: string, next: SessionState) => void
   remove: (id: string) => void
   setActive: (id: string | null) => void
   active: () => SessionState | undefined
@@ -49,6 +51,26 @@ export const useSessions = create<SessionsStore>((set, get) => ({
     set((prev) => ({
       sessions: prev.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     })),
+
+  /**
+   * 用真实会话替换占位会话。
+   *
+   * 连接建立之前先摆一个「正在连接」的占位会话（用户马上有反馈），
+   * 拿到后端给的真实 session id 之后再换过去 —— 标签页不闪。
+   */
+  replace: (oldId, next) =>
+    set((prev) => {
+      const idx = prev.sessions.findIndex((s) => s.id === oldId)
+      if (idx < 0) return prev
+      const sessions = [...prev.sessions]
+      sessions[idx] = next
+      return {
+        sessions,
+        // 只有占位会话本来是当前标签时才跟着切过去，
+        // 别把用户已经切走的焦点抢回来。
+        activeId: prev.activeId === oldId ? next.id : prev.activeId,
+      }
+    }),
 
   remove: (id) =>
     set((prev) => {

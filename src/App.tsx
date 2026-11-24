@@ -23,11 +23,15 @@ import {
 import { useTransfers } from './store/transfers'
 import { useUi } from './store/ui'
 
+/** 占位会话的序号：连接建立之前先用它占个位置。 */
+let pendingSeq = 0
+
 export default function App() {
   const sessions = useSessions((s) => s.sessions)
   const activeId = useSessions((s) => s.activeId)
   const beginSession = useSessions((s) => s.begin)
   const patchSession = useSessions((s) => s.patch)
+  const replaceSession = useSessions((s) => s.replace)
   const removeSession = useSessions((s) => s.remove)
   const setActive = useSessions((s) => s.setActive)
 
@@ -157,18 +161,44 @@ export default function App() {
 
   /* ── 建立连接 ───────────────────────────────── */
   const handleConnect = useCallback(
-    async (req: ConnectRequest) => {
+    async (req: ConnectRequest, opts?: { pending?: boolean }) => {
+      // 从主机列表点进来时，先把「正在连接」摆出来：完整走一遍 SSH 握手
+      // 要小半秒，没有占位会话的话界面看起来就是没反应（缺陷 #22）。
+      const pendingId = opts?.pending ? `pending-${++pendingSeq}` : null
+      if (pendingId) {
+        beginSession({
+          id: pendingId,
+          label: req.label || `${req.username}@${req.host}`,
+          host: req.host,
+          port: req.port ?? 22,
+          username: req.username,
+          authType: req.authType,
+        })
+      }
       try {
         const info = await sessionApi.connect(req)
-        beginSession({
-          id: info.sessionId,
-          label: info.label,
-          host: info.host,
-          port: info.port,
-          username: info.username,
-          authType: info.authType,
-        })
-        patchSession(info.sessionId, { status: 'connected' })
+        if (pendingId) {
+          // 换成后端的真实会话：标签页原地替换，不闪。
+          replaceSession(pendingId, {
+            id: info.sessionId,
+            label: info.label,
+            host: info.host,
+            port: info.port,
+            username: info.username,
+            authType: info.authType,
+            status: 'connected',
+          })
+        } else {
+          beginSession({
+            id: info.sessionId,
+            label: info.label,
+            host: info.host,
+            port: info.port,
+            username: info.username,
+            authType: info.authType,
+          })
+          patchSession(info.sessionId, { status: 'connected' })
+        }
         setDialogOpen(false)
         setEditingHost(null)
         push({ kind: 'success', title: '已连接', message: info.label })
@@ -177,27 +207,36 @@ export default function App() {
           void loadHosts().catch(() => {})
         }
       } catch (e) {
+        // 连不上就把占位会话收掉，错误照旧用提示条报给用户。
+        if (pendingId) removeSession(pendingId)
         reportError('连接失败', e as never)
         throw e
       }
     },
-    [beginSession, patchSession, push, reportError, loadHosts],
+    [beginSession, patchSession, replaceSession, removeSession, push, reportError, loadHosts],
   )
 
   /** 强制为某台已保存主机新开一个会话。 */
   const openHostSession = useCallback(
     async (host: SavedHost) => {
-      // 复用的主机直接连接；秘密由 Rust 从钥匙串读取，不经过前端。
-      await handleConnect({
-        host: host.host,
-        port: host.port,
-        username: host.username,
-        authType: host.authType,
-        privateKeyPath: host.privateKeyPath,
-        save: false,
-        label: host.label,
-        hostId: host.id,
-      })
+      // 复用的主机直接连接；秘密由 Rust 从本地加密库读取，不经过前端。
+      try {
+        await handleConnect(
+          {
+            host: host.host,
+            port: host.port,
+            username: host.username,
+            authType: host.authType,
+            privateKeyPath: host.privateKeyPath,
+            save: false,
+            label: host.label,
+            hostId: host.id,
+          },
+          { pending: true },
+        )
+      } catch {
+        // 错误已经由 handleConnect 报过了。
+      }
     },
     [handleConnect],
   )

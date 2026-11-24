@@ -97,3 +97,33 @@ describe('useSessions.setActive / active', () => {
     expect(useSessions.getState().activeId).toBe('s1')
   })
 })
+
+describe('useSessions.replace', () => {
+  it('用真实会话原地替换占位会话，标签页不闪', () => {
+    useSessions.getState().begin({ ...base, id: 'pending-1' })
+    useSessions.getState().replace('pending-1', { ...base, id: 'real-1', status: 'connected' })
+
+    const { sessions, activeId } = useSessions.getState()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]).toMatchObject({ id: 'real-1', status: 'connected' })
+    expect(activeId).toBe('real-1')
+  })
+
+  it('用户已经切走焦点时不抢焦点', () => {
+    useSessions.getState().begin({ ...base, id: 'pending-1' })
+    useSessions.getState().begin({ ...base, id: 's2' })
+    useSessions.getState().setActive('s2')
+    useSessions.getState().replace('pending-1', { ...base, id: 'real-1', status: 'connected' })
+
+    expect(useSessions.getState().activeId).toBe('s2')
+  })
+
+  it('占位会话不在了就不动', () => {
+    useSessions.getState().begin(base)
+    useSessions.getState().replace('pending-x', { ...base, id: 'real-1', status: 'connected' })
+
+    const { sessions } = useSessions.getState()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe('s1')
+  })
+})

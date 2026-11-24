@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use russh::client::{Config, Handle, Msg};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
-use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf};
+use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Pty};
 use tauri::Emitter;
 use tokio::sync::Mutex;
 
@@ -231,8 +231,16 @@ pub async fn connect(
         .channel_open_session()
         .await
         .map_err(|e| map_ssh_error(&e))?;
+    // **让服务端把 PTY 建好时就关掉回显**（RFC 4254 的 pty-req 终端模式）。
+    //
+    // 注入工作目录钩子时，脚本是写进 PTY 的**输入流**的：
+    // 内核会回显一遍，bash 的 readline 启动时还会把读到的那行重绘一遍，
+    // 于是用户每次开 session 都能在终端里看到几行 shell 代码（缺陷 #21）。
+    //
+    // 从一开始就没有回显，注入就完全看不见；装完钩子再用 `stty echo`
+    // 把回显还回去（见 `tracker::install_command`）。
     channel
-        .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
+        .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[(Pty::ECHO, 0)])
         .await
         .map_err(|e| map_ssh_error(&e))?;
     channel
@@ -241,17 +249,30 @@ pub async fn connect(
         .map_err(|e| map_ssh_error(&e))?;
 
     let (read_half, writer) = channel.split();
+    let writer = Arc::new(writer);
+    let handle = Arc::new(Mutex::new(handle));
 
-    // 探测远端 shell 并注入工作目录上报钩子。
-    // 用独立的 exec channel 探测，不会污染交互式终端的输出。
-    let shell = detect_shell(&handle).await;
-    if let Some(kind) = shell {
-        if let Some(script) = crate::ssh::tracker::hook_script(kind) {
-            writer
-                .data_bytes(bytes::Bytes::from(script.as_bytes()))
-                .await
-                .ok();
-        }
+    // 探测远端 shell 并静默安装工作目录上报钩子。
+    //
+    // 放在后台做（缺陷 #22）：探测要额外开一个 exec channel，实测约 30ms，
+    // 不该让用户干等着「连接中」。用独立的 exec channel 探测，
+    // 不会污染交互式终端的输出。
+    {
+        let detect_handle = handle.clone();
+        let hook_writer = writer.clone();
+        tokio::spawn(async move {
+            let kind = {
+                let guard = detect_handle.lock().await;
+                detect_shell(&guard).await
+            };
+            // 认不出来也照样要把回显还回去 —— 是我们关的。
+            let command = crate::ssh::tracker::install_command(
+                kind.unwrap_or(crate::ssh::tracker::ShellKind::Unknown),
+            );
+            let _ = hook_writer
+                .data_bytes(bytes::Bytes::from(command.into_bytes()))
+                .await;
+        });
     }
 
     let session_id = uuid::Uuid::now_v7().to_string();
@@ -267,8 +288,8 @@ pub async fn connect(
     let session = Arc::new(Session {
         id: session_id.clone(),
         info: info.clone(),
-        writer: Arc::new(writer),
-        handle: Arc::new(Mutex::new(handle)),
+        writer,
+        handle,
         sftp: Arc::new(Mutex::new(None)),
         attached: AtomicBool::new(false),
         pending: Mutex::new(Vec::new()),
