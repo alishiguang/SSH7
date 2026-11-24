@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { SavedHost } from '../api/types'
+import { lockDragCursor } from '../lib/drag'
 import { useHosts } from '../store/hosts'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
@@ -131,6 +132,7 @@ export default function Sidebar({
         if (Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
         started = true
         setDragHostId(host.id)
+        lockDragCursor(true)
       }
       const target = groupAtPoint(ev.clientX, ev.clientY)
       dropGroupRef.current = target
@@ -144,6 +146,7 @@ export default function Sidebar({
       dropGroupRef.current = null
       setDragHostId(null)
       setDropGroupName(null)
+      lockDragCursor(false)
       if (!started) return
       // 落在分组标题之外就当没拖
       if (target === null) return
@@ -195,6 +198,7 @@ export default function Sidebar({
         if (Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
         started = true
         setDragGroupName(name)
+        lockDragCursor(true)
       }
       const idx = groupIndexAt(ev.clientY, name)
       groupDropIndexRef.current = idx
@@ -208,6 +212,7 @@ export default function Sidebar({
       groupDropIndexRef.current = null
       setGroupDropIndex(null)
       setDragGroupName(null)
+      lockDragCursor(false)
       if (!started || idx === null) return
       skipClickRef.current = true
       window.setTimeout(() => {
@@ -322,7 +327,8 @@ export default function Sidebar({
       onClick={() => {
         if (skipClickRef.current) return
         // 单击只是选中 —— 建连接要走 ＋ 或右键菜单。
-        setSelectedHost(h.id)
+        // 再点一次同一台就是取消选中。
+        setSelectedHost(selectedHostId === h.id ? null : h.id)
       }}
       onContextMenu={(e) => {
         e.preventDefault()

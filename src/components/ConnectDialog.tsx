@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { sessionApi } from '../api/bridge'
 import type { AuthType, ConnectRequest, SavedHost, TestResult } from '../api/types'
 import { useHosts } from '../store/hosts'
+import { useUi } from '../store/ui'
 
 import { Icon } from './Icons'
 
@@ -41,7 +42,6 @@ const EMPTY: FormState = {
 
 export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
   const isEdit = !!editHost
-  const [form, setForm] = useState<FormState>(EMPTY)
   const [testing, setTesting] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
@@ -58,27 +58,52 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
     return [...set].sort()
   }, [groups])
 
-  useEffect(() => {
-    if (editHost) {
-      setForm({
-        label: editHost.label,
-        group: editHost.group ?? '',
-        host: editHost.host,
-        port: String(editHost.port),
-        username: editHost.username,
-        authType: editHost.authType,
-        // 密码不回显：钥匙串里的秘密只用于连接，不把明文塞回表单。
-        password: '',
-        privateKeyPath: editHost.privateKeyPath ?? '',
-        passphrase: '',
-        save: true,
-      })
-    } else {
-      setForm(EMPTY)
+  /**
+   * 新建连接时默认落在「当前选中的那台机器所在的分组」里 ——
+   * 顺着上下文往下建，少改一次字段。
+   * 没选中任何机器就是 HOSTS（未分组）。
+   */
+  const selectedHostId = useUi((s) => s.selectedHostId)
+  const allHosts = useHosts((s) => s.hosts)
+  const defaultGroup = useMemo(() => {
+    const picked = allHosts.find((h) => h.id === selectedHostId)
+    return (picked?.group ?? '').trim()
+  }, [allHosts, selectedHostId])
+
+  /**
+   * 表单初值只算一次。
+   * 编辑：带出这台机器自己的分组（可改，清空即移出分组）。
+   * 新建：落在当前选中的那台机器所在的分组 —— 顺着上下文往下建，少改一次字段；
+   *      没选中任何机器就是 HOSTS（未分组）。
+   *
+   * 换主机 / 换模式时靠 App.tsx 上的 key 让组件重新挂载、重新算初值 ——
+   * 这样用户在字段里打了一半的字不会被中途冲掉。
+   */
+  const [form, setForm] = useState<FormState>(() => {
+    if (!editHost) return { ...EMPTY, group: defaultGroup }
+    return {
+      label: editHost.label,
+      group: editHost.group ?? '',
+      host: editHost.host,
+      port: String(editHost.port),
+      username: editHost.username,
+      authType: editHost.authType,
+      // 密码不回显：凭据库里的秘密只用于连接，不把明文塞回表单。
+      password: '',
+      privateKeyPath: editHost.privateKeyPath ?? '',
+      passphrase: '',
+      save: true,
     }
-    setTestResult(null)
-    setError(null)
-  }, [editHost])
+  })
+
+  // Esc 关闭这个对话框 —— 和右键菜单、设置面板一个规矩。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((f) => ({ ...f, [k]: v }))
@@ -227,6 +252,13 @@ export default function ConnectDialog({ editHost, onSubmit, onClose }: Props) {
                 <option key={g} value={g} />
               ))}
             </datalist>
+            <span className="field-note">
+              {isEdit
+                ? '可改；清空即移出分组'
+                : defaultGroup
+                  ? `默认在「${defaultGroup}」分组`
+                  : '默认在 HOSTS（未分组）'}
+            </span>
           </div>
 
           <div className="field">

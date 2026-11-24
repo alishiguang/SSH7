@@ -491,6 +491,9 @@ export default function App() {
 
       {dialogOpen && (
         <ConnectDialog
+          // key 变了就重新挂载 —— 表单初值（尤其是默认分组）重新算一遍，
+          // 不会把用户已经打过字的字段冲掉。
+          key={editingHost?.id ?? 'new'}
           editHost={editingHost}
           onSubmit={handleConnect}
           onClose={() => {

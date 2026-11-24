@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { lockDragCursor } from '../lib/drag'
 import { useSessions } from '../store/sessions'
 import { Icon } from './Icons'
 
@@ -74,6 +75,7 @@ export default function SessionTabs({
         if (Math.abs(ev.clientX - d.startX) < DRAG_THRESHOLD) return
         d.started = true
         setDragId(d.id)
+        lockDragCursor(true)
       }
       const idx = dropIndexAt(ev.clientX, d.id)
       dropIndexRef.current = idx
@@ -89,6 +91,7 @@ export default function SessionTabs({
       dropIndexRef.current = null
       setDropIndex(null)
       setDragId(null)
+      lockDragCursor(false)
       if (!d?.started) return
       skipClickRef.current = true
       window.setTimeout(() => {

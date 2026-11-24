@@ -207,7 +207,9 @@
   align-items: center;
   gap: 4px;
   padding: 8px 12px 6px;
-  cursor: pointer;
+  /* 分组能拖着换顺序 —— 光标给个抓手 */
+  cursor: grab;
+  touch-action: none;
   user-select: none;
   transition: color var(--dur) var(--ease);
 }
@@ -232,6 +234,7 @@
 /* 拖动分组：被拖的变淡，落点用一条红线标出来 */
 .sidebar-group-head.is-dragging {
   opacity: 0.45;
+  cursor: grabbing;
 }
 .sidebar-group-head.is-drop-before {
   box-shadow: inset 0 2px 0 var(--red);
@@ -292,6 +295,7 @@
 /* 拖动主机换组时，被拖的那行变淡 */
 .host-row.is-dragging {
   opacity: 0.45;
+  cursor: grabbing;
 }
 .host-row-body {
   flex: 1;
@@ -382,7 +386,9 @@
   align-items: center;
   gap: 7px;
   padding: 8px 12px;
-  cursor: pointer;
+  /* 可以拖着换位置 —— 光标给个抓手，别让人以为只能点 */
+  cursor: grab;
+  touch-action: none;
   border-right: 1px solid var(--line);
   border-bottom: 2px solid transparent;
   font-family: var(--font-mono);
@@ -417,6 +423,7 @@
   display: inline-flex;
   align-items: center;
   color: var(--cream-3);
+  cursor: pointer;
   padding: 0 2px;
   border-radius: 2px;
   opacity: 0;
@@ -433,6 +440,7 @@
 /* 拖动排序：拖动中的标签变淡，落点用一条红线标出来 */
 .tab.is-dragging {
   opacity: 0.45;
+  cursor: grabbing;
 }
 .tab.is-drop-before {
   box-shadow: inset 2px 0 0 var(--red);
