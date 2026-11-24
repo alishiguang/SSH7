@@ -22,3 +22,6 @@ yarn-error.log*
 # 打包产物
 *.dmg
 *.app/
+
+# 图标预览（由 scripts/make-icon.py 生成，不入库）
+icon-preview.png
