@@ -66,6 +66,15 @@
                 return hosts
               case 'session_connect': {
                 var r = (args && args.request) || {}
+                // 模拟真实握手耗时，好看到「正在连接」那一瞬间的界面。
+                // ?delay=3000 可以把它调得更长，用来观察连接中的状态。
+                var ms = parseInt(
+                  (location.search.match(/[?&]delay=(\d+)/) || [])[1] || '900',
+                  10
+                )
+                await new Promise(function (res) {
+                  setTimeout(res, ms)
+                })
                 return {
                   sessionId: 's' + Math.random().toString(36).slice(2, 10),
                   label: r.label || r.username + '@' + r.host,
