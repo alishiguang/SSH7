@@ -191,3 +191,40 @@ pub mod event {
     pub const ERROR: &str = "session://error";
     pub const TRANSFER: &str = "transfer://progress";
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 前端 `HostList` 与 Rust 侧 `HostListDto` 的字段名必须对得上。
+    /// 改了一边忘了另一边，界面就会静悄悄地少显示东西。
+    #[test]
+    fn host_list_dto_uses_camel_case() {
+        let dto = HostListDto {
+            hosts: vec![SavedHostDto {
+                id: "a".into(),
+                label: "机器".into(),
+                group: Some("生产环境".into()),
+                host: "10.0.0.1".into(),
+                port: 22,
+                username: "root".into(),
+                auth_type: AuthType::Password,
+                private_key_path: None,
+                has_password: true,
+                has_passphrase: false,
+            }],
+            groups: vec!["生产环境".into()],
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&dto).unwrap();
+        assert!(json.get("hosts").is_some(), "缺少 hosts 字段");
+        assert!(json.get("groups").is_some(), "缺少 groups 字段");
+
+        let host = &json["hosts"][0];
+        assert_eq!(host["authType"], "password");
+        assert_eq!(host["hasPassword"], true);
+        assert_eq!(host["group"], "生产环境");
+        // 没有的字段不要出现，免得前端拿到一堆 null。
+        assert!(host.get("privateKeyPath").is_none());
+    }
+}
