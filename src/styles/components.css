@@ -716,11 +716,14 @@
   color: var(--red);
 }
 
-.empty-lead {
+/* 欢迎屏的引文：文言用衬线，跟黑体正文拉开气质 */
+.empty-verse {
   max-width: 520px;
-  font-size: calc(14px * var(--ui-scale));
-  line-height: 1.75;
-  color: var(--cream-2);
+  font-family: var(--font-serif);
+  font-size: calc(18px * var(--ui-scale));
+  line-height: 1.95;
+  letter-spacing: 0.08em;
+  color: var(--cream);
   margin-bottom: 30px;
 }
 

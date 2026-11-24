@@ -38,6 +38,9 @@
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo,
     Consolas, monospace;
+  /* 文言 / 诗句用衬线，和黑体正文拉开气质 */
+  --font-serif: 'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Source Han Serif SC',
+    'SimSun', '宋体', serif;
 
   /* ── 排版 ─────────────────────────────── */
   /* --ui-scale 由「设置」面板写入根元素，控制整个界面的字号缩放 */

@@ -47,9 +47,10 @@ export default function EmptyState({
           。
         </h1>
 
-        <p className="empty-lead">
-          只做两件事：连接，与传文件。终端和 SFTP 全部由 Rust 写就 ——
-          没有 Node.js，没有 Chromium，安装包 6 MB 上下。
+        <p className="empty-verse">
+          古之乐也，岂在繁昌？
+          <br />
+          简而不杂，诚足珍藏。
         </p>
 
         <div className="empty-actions">
