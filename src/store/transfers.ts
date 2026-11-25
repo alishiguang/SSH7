@@ -1,5 +1,16 @@
 import { create } from 'zustand'
 
+/**
+ * 传输是从哪儿发起的。
+ *
+ * 进度提示**只显示在发起它的那一侧**：面板里发起的就只显示在文件面板，
+ * 拖到终端里的就只显示在终端。
+ *
+ * 不分来源的话，同一次传输会在终端和文件面板各出现一张卡片 ——
+ * 同一件事说两遍，纯噪音。
+ */
+export type TransferOrigin = 'panel' | 'terminal'
+
 /** 一个进行中的文件传输。 */
 export interface Transfer {
   /** 由 Rust 端生成，唯一标识一次传输（缺陷 #6：不再用文件名做标识） */
@@ -11,8 +22,24 @@ export interface Transfer {
   /** 0..100 */
   percent: number
   direction: 'upload' | 'download'
+  /** 从哪儿发起的 —— 决定这条提示显示在终端还是文件面板。 */
+  origin: TransferOrigin
   status: 'active' | 'done' | 'error'
   error?: string
+}
+
+/**
+ * 取某个会话里、某一边该显示的传输。
+ *
+ * 「谁显示什么」只在这里定义一次 —— 终端和文件面板各调各的，
+ * 免得两边各写一套过滤规则，又写出两套不一样的来。
+ */
+export function transfersFor(
+  transfers: Transfer[],
+  sessionId: string,
+  origin: TransferOrigin,
+): Transfer[] {
+  return transfers.filter((t) => t.sessionId === sessionId && t.origin === origin)
 }
 
 /**

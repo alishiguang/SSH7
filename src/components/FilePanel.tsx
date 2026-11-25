@@ -8,7 +8,7 @@ import {
   FILE_PANEL_WIDTH_MIN,
   useSettings,
 } from '../store/settings'
-import { useTransfers } from '../store/transfers'
+import { transfersFor, useTransfers } from '../store/transfers'
 import { useUi } from '../store/ui'
 import { Icon } from './Icons'
 import type { ConfirmSpec } from './ConfirmDialog'
@@ -194,6 +194,8 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
           transferred: 0,
           total: 0,
           direction: 'upload',
+          // 从面板发起的上传，提示只显示在文件面板里 —— 终端不再重复一份。
+          origin: 'panel',
         })
         try {
           // 后端会自动判断是文件还是目录，目录会递归上传。
@@ -250,11 +252,13 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
         transferred: 0,
         total: file.size,
         direction: 'download',
+        // 从面板发起的下载，提示只显示在文件面板里。
+        origin: 'panel',
       })
       try {
         await sftpApi.download(sessionId, file.path, dir, transferId)
         finishTransfer(transferId)
-        push({ kind: 'success', title: '下载完成', message: file.name })
+        // 不再另外弹「下载完成」提示条 —— 下面那条进度卡已经说了同一件事。
       } catch (e) {
         finishTransfer(transferId, e instanceof Error ? e.message : String(e))
         reportError('下载失败', e as never)
@@ -311,7 +315,7 @@ export default function FilePanel({ sessionId, onClose, askConfirm }: Props) {
     void load(p === '/' ? '/' : p.replace(/\/+$/, ''))
   }
 
-  const sessionTransfers = transfers.filter((t) => t.sessionId === sessionId)
+  const sessionTransfers = transfersFor(transfers, sessionId, 'panel')
 
   return (
     <aside className="file-panel" style={{ width: `${width}px` }}>

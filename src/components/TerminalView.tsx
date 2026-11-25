@@ -7,7 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import { events, sessionApi, sftpApi } from '../api/bridge'
 import { useDropZone } from '../hooks/useDropZone'
 import { useSettings } from '../store/settings'
-import { useTransfers } from '../store/transfers'
+import { transfersFor, useTransfers } from '../store/transfers'
 import { useUi } from '../store/ui'
 
 import { Icon } from './Icons'
@@ -226,6 +226,8 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
           transferred: 0,
           total: 0,
           direction: 'upload',
+          // 从终端发起的上传，提示只显示在终端里 —— 文件面板不再重复一份。
+          origin: 'terminal',
         })
         try {
           // 后端会自动判断是文件还是目录，目录会递归上传。
@@ -246,7 +248,7 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
     })()
   }, [dropped, sessionId, startTransfer, finishTransfer])
 
-  const sessionTransfers = transfers.filter((t) => t.sessionId === sessionId)
+  const sessionTransfers = transfersFor(transfers, sessionId, 'terminal')
 
   return (
     <div className="terminal-wrap" ref={(el) => { zoneRef.current = el }}>

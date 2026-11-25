@@ -368,8 +368,19 @@
               }
               case 'sftp_pick_files':
                 return []
-              case 'sftp_pick_directory':
-              case 'sftp_pick_upload_folder':
+              case 'sftp_pick_directory': {
+                // ?dir=<路径> → 模拟「用户选了一个本地目录」，这样下载流程能跑起来。
+                // 不带这个参数就是「用户取消了」，跟真实行为一致。
+                var m = /[?&]dir=([^&]*)/.exec(location.search)
+                return m ? decodeURIComponent(m[1]) : null
+              }
+              case 'sftp_pick_upload_folder': {
+                var mf = /[?&]updir=([^&]*)/.exec(location.search)
+                return mf ? decodeURIComponent(mf[1]) : null
+              }
+              case 'sftp_download':
+                // ?dl=hang → 永远不结束，方便在浏览器里观察进度提示出现在哪儿。
+                if (/[?&]dl=hang/.test(location.search)) return new Promise(function () {})
                 return null
               case 'plugin:opener|open_url': {
                 // 浏览器预览里没有系统 opener，模拟成新窗口打开。
