@@ -5,6 +5,10 @@
   "type": "module",
   "description": "SSH7 — 简洁酷炫的跨平台 SSH 客户端",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chuaker7/SSH7"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { credentialApi, openExternal, REPO_URL } from '../api/bridge'
-import type { CredentialBackend, CredentialStoreInfo } from '../api/types'
+import { openExternal, REPO_URL } from '../api/bridge'
 import {
   TERMINAL_FONT_DEFAULT,
   TERMINAL_FONT_MAX,
@@ -22,17 +21,11 @@ interface Props {
   askConfirm: (spec: ConfirmSpec) => void
 }
 
-/** 两种后端的说明文案。 */
-const BACKEND_NOTES: Record<CredentialBackend, string> = {
-  vault: 'AES-256-GCM 加密，不弹窗',
-  keyring: '系统托管，更安全',
-}
-
 /**
  * 设置面板。
  *
- * 显示偏好（字号、界面缩放）与凭据存储位置。
- * 这里只切换**存放位置**，任何时候都拿不到明文密码。
+ * 只管**显示偏好**（字号、界面缩放）。
+ * 凭据存放位置不再给用户选 —— 永远���本地加密文件。
  */
 export default function SettingsPanel({ onClose, askConfirm }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -43,36 +36,41 @@ export default function SettingsPanel({ onClose, askConfirm }: Props) {
   const nudgeUiScale = useSettings((s) => s.nudgeUiScale)
   const reset = useSettings((s) => s.reset)
 
-  const [store, setStore] = useState<CredentialStoreInfo | null>(null)
-  const [storeError, setStoreError] = useState<string | null>(null)
-  const [switching, setSwitching] = useState(false)
+  const [version, setVersion] = useState<string | null>(null)
 
-  // 打开时读一次当前后端。
-  useEffect(() => {
-    let alive = true
-    credentialApi
-      .info()
-      .then((info) => {
-        if (alive) setStore(info)
+  /**
+   * 打开仓库页面。
+   *
+   * 打不开就**说出来** —— 在 Tauri 的 webview 里，失败的链接是静默的，
+   * 用户只会看到「点了没反应」。
+   */
+  const openRepo = useCallback(async () => {
+    try {
+      await openExternal(REPO_URL)
+    } catch (e) {
+      useUi.getState().push({
+        kind: 'error',
+        title: '打不开仓库页面',
+        message: REPO_URL,
+        hint: e instanceof Error ? e.message : String(e),
       })
-      .catch((e) => {
-        if (alive) setStoreError(e instanceof Error ? e.message : String(e))
-      })
-    return () => {
-      alive = false
     }
   }, [])
 
-  const switchBackend = useCallback(async (backend: CredentialBackend) => {
-    setSwitching(true)
-    setStoreError(null)
-    try {
-      const info = await credentialApi.set(backend)
-      setStore(info)
-    } catch (e) {
-      setStoreError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setSwitching(false)
+  // 当前版本号，显示在 GitHub 图标下面。
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const { getVersion } = await import('@tauri-apps/api/app')
+        const v = await getVersion()
+        if (alive) setVersion(v)
+      } catch {
+        // 浏览器预览里没有 Tauri 应用 API，忽略即可。
+      }
+    })()
+    return () => {
+      alive = false
     }
   }, [])
 
@@ -181,38 +179,6 @@ export default function SettingsPanel({ onClose, askConfirm }: Props) {
       </button>
 
       <div className="settings-section">
-        <span className="meta">// CREDENTIALS</span>
-        <div className="settings-cred">
-          {(['vault', 'keyring'] as CredentialBackend[]).map((b) => {
-            const active = store?.backend === b
-            const disabled = switching || (b === 'keyring' && store?.keyringAvailable === false)
-            return (
-              <button
-                key={b}
-                className={`settings-cred-option${active ? ' is-active' : ''}`}
-                disabled={disabled}
-                onClick={() => void switchBackend(b)}
-              >
-                <span className="settings-cred-name">
-                  {b === 'vault' ? '本地加密文件' : '系统钥匙串'}
-                </span>
-                <span className="settings-cred-note">
-                  {b === 'keyring' && store?.keyringAvailable === false
-                    ? '本机不可用'
-                    : BACKEND_NOTES[b]}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        <p className="settings-cred-tip">
-          macOS 上未签名的应用每次升级都会被系统钥匙串要求重新授权，弹窗很烦；
-          「本地加密文件」不会弹窗，密码以 AES-256-GCM 加密存在应用目录里。
-        </p>
-        {storeError && <p className="settings-cred-tip is-error">{storeError}</p>}
-      </div>
-
-      <div className="settings-section">
         <span className="meta">// SHORTCUTS</span>
         <div className="settings-shortcut">
           <kbd>Ctrl</kbd>
@@ -232,14 +198,15 @@ export default function SettingsPanel({ onClose, askConfirm }: Props) {
       </div>
 
       <div className="settings-foot">
-        完整功能说明见仓库{' '}
         <button
-          className="settings-foot-link"
-          onClick={() => void openExternal(REPO_URL)}
-          title={REPO_URL}
+          className="settings-github"
+          onClick={() => void openRepo()}
+          title={`完整功能说明见仓库：${REPO_URL}`}
+          aria-label="打开 GitHub 仓库"
         >
-          {REPO_URL}
+          <Icon name="github" size={15} />
         </button>
+        {version && <span className="settings-version">v{version}</span>}
       </div>
     </div>
   )

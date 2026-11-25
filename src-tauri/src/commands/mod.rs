@@ -1,6 +1,5 @@
 //! 应用状态。由 Tauri 的 `manage` 注入，所有命令通过 `State<AppState>` 访问。
 
-pub mod credentials;
 pub mod host;
 pub mod session;
 pub mod sftp;
@@ -23,7 +22,7 @@ pub struct AppState {
     pub windows: WindowRegistry,
     /// 已保存主机的存储。
     pub hosts: HostsStore,
-    /// 凭据存储（系统钥匙串 / 本地加密文件）。
+    /// 凭据存储（本地加密文件）。
     pub secrets: SecretStore,
 }
 

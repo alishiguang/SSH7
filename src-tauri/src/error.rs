@@ -21,7 +21,6 @@ pub enum ErrorCode {
     PermissionDenied,
     NoSuchHost,
     SessionGone,
-    KeyringUnavailable,
     Io,
     InvalidInput,
     Internal,
@@ -41,7 +40,6 @@ impl ErrorCode {
             ErrorCode::PermissionDenied => "PERMISSION_DENIED",
             ErrorCode::NoSuchHost => "NO_SUCH_HOST",
             ErrorCode::SessionGone => "SESSION_GONE",
-            ErrorCode::KeyringUnavailable => "KEYRING_UNAVAILABLE",
             ErrorCode::Io => "IO",
             ErrorCode::InvalidInput => "INVALID_INPUT",
             ErrorCode::Internal => "INTERNAL",
@@ -98,9 +96,6 @@ pub enum AppError {
     #[error("会话已关闭")]
     SessionGone(String),
 
-    #[error("系统钥匙串不可用")]
-    KeyringUnavailable(String),
-
     #[error("本地文件操作失败")]
     Io(String),
 
@@ -125,7 +120,6 @@ impl AppError {
             AppError::PermissionDenied(_) => ErrorCode::PermissionDenied,
             AppError::NoSuchHost(_) => ErrorCode::NoSuchHost,
             AppError::SessionGone(_) => ErrorCode::SessionGone,
-            AppError::KeyringUnavailable(_) => ErrorCode::KeyringUnavailable,
             AppError::Io(_) => ErrorCode::Io,
             AppError::InvalidInput(_) => ErrorCode::InvalidInput,
             AppError::Internal(_) => ErrorCode::Internal,
@@ -150,9 +144,6 @@ impl AppError {
             AppError::PermissionDenied(_) => "远端账号对该路径没有读写权限，可换一个目录".into(),
             AppError::NoSuchHost(_) => "该主机已从列表中移除".into(),
             AppError::SessionGone(_) => "连接已断开，重新建立会话".into(),
-            AppError::KeyringUnavailable(_) => {
-                "当前系统没有可用的密钥库，本次连接仍然有效，但密码不会被保存".into()
-            }
             AppError::Io(_) => "检查本地路径是否存在以及读写权限".into(),
             AppError::InvalidInput(_) => "修正表单中的字段后再试".into(),
             AppError::Internal(_) => "重试一次；若仍失败，请把下方的错误详情一并反馈".into(),
@@ -173,7 +164,6 @@ impl AppError {
             | AppError::PermissionDenied(d)
             | AppError::NoSuchHost(d)
             | AppError::SessionGone(d)
-            | AppError::KeyringUnavailable(d)
             | AppError::Io(d)
             | AppError::InvalidInput(d)
             | AppError::Internal(d) => d,

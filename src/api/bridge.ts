@@ -13,8 +13,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AppErrorPayload,
   ConnectRequest,
-  CredentialBackend,
-  CredentialStoreInfo,
   HostList,
   OpenWindowRequest,
   OpenWindowResult,
@@ -31,13 +29,17 @@ import type {
 } from './types'
 
 /** SSH7 的公开仓库地址。 */
-export const REPO_URL = 'https://github.com/alishiguang/SSH7'
+export const REPO_URL = 'https://github.com/chuaker7/SSH7'
 
 /**
  * 用系统默认浏览器打开外部链接。
  *
  * Tauri 里走 `opener` 插件；浏览器预览（`dev-mock.html`）下退化成新窗口，
  * 免得在纯前端环境里直接报错。
+ *
+ * **失败会往上抛**：在 Tauri 的 webview 里 `window.open` 是静默失败的
+ * （没有新窗口、没有报错），如果这里把异常吞掉，表现就是「点了图标毫无动静」。
+ * 调用方必须能把失败告诉用户。
  */
 export async function openExternal(url: string): Promise<void> {
   const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -45,13 +47,8 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer')
     return
   }
-  try {
-    const { openUrl } = await import('@tauri-apps/plugin-opener')
-    await openUrl(url)
-  } catch {
-    // 插件不可用时也别把链接变成死的，退化成新窗口。
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const { openUrl } = await import('@tauri-apps/plugin-opener')
+  await openUrl(url)
 }
 
 /** 归一化后的前端错误：携带 Rust 侧的结构化错误码。 */
@@ -206,16 +203,6 @@ export const windowApi = {
    * 新窗口靠它自动连上目标主机。
    */
   boot: () => call<WindowAssignment | null>('window_boot'),
-}
-
-/* ── 凭据存储 ───────────────────────────────────────── */
-
-export const credentialApi = {
-  /** 查询当前用的凭据存储后端。 */
-  info: () => call<CredentialStoreInfo>('credential_store_info'),
-  /** 切换后端，已保存的秘密会一起搬过去。 */
-  set: (backend: CredentialBackend) =>
-    call<CredentialStoreInfo>('credential_store_set', { backend }),
 }
 
 /* ── 事件 ───────────────────────────────────────────── */

@@ -2,11 +2,11 @@
 name = "ssh7"
 version = "1.8.0"
 description = "SSH7 — 简洁酷炫的跨平台 SSH 客户端"
-authors = ["alishiguang"]
+authors = ["chuaker7"]
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/alishiguang/SSH7"
+repository = "https://github.com/chuaker7/SSH7"
 
 [lib]
 name = "ssh7_lib"
@@ -37,7 +37,6 @@ russh-sftp = "4"
 # `encryption` 特性用于解密带口令的私钥。
 ssh-key = { version = "=0.7.0-rc.12", features = ["encryption"] }
 
-keyring = { version = "4", features = ["v1"] }
 # AES-256-GCM（本地加密凭据库用）。russh 已经带了 ring 0.17，这里直接复用，不额外编译。
 ring = "0.17"
 uuid = { version = "1", features = ["v7", "serde"] }
@@ -48,6 +47,11 @@ dirs = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-opener = "2"
+
+[dev-dependencies]
+# 与 Tauri 内部用的是同一个 glob 库（窗口标签匹配），
+# 权限自检要用**完全相同**的匹配语义才作数。
+glob = "0.3"
 
 [features]
 default = ["custom-protocol"]

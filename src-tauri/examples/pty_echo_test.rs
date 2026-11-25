@@ -10,7 +10,7 @@
 //! 用法：
 //! ```sh
 //! SSH7_E2E_HOST=10.0.80.4 SSH7_E2E_USER=root \
-//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.alishiguang.ssh7" \
+//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.chuaker7.ssh7" \
 //! cargo run --example pty_echo_test
 //! ```
 
@@ -21,7 +21,7 @@ use russh::client::Config;
 use russh::Pty;
 
 use ssh7_lib::ssh::client::ClientHandler;
-use ssh7_lib::storage::keyring;
+use ssh7_lib::storage::secrets;
 use ssh7_lib::storage::secrets::SecretStore;
 
 #[tokio::main]
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::var("SSH7_E2E_APP_CONFIG_DIR").map(std::path::PathBuf::from)?;
 
     let store = SecretStore::new(&dir);
-    let account = keyring::password_account("01a20ce2-32ab-7184-8683-2eec1f61bfa0");
+    let account = secrets::password_account("01a20ce2-32ab-7184-8683-2eec1f61bfa0");
     let password = store.get(&account)?.ok_or("没有密码")?;
 
     let config = Arc::new(Config {

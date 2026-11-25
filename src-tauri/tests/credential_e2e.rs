@@ -13,21 +13,20 @@
 //!
 //! 密码从**文件**读，不进环境变量、不进进程列表。
 //!
-//! 这个测试覆盖三件事：
+//! 这个测试覆盖两件事：
 //!
 //! 1. 本地加密凭据库能存取密码，密文里不含明文；
-//! 2. 两条迁移路径都工作 —— 显式切换后端时搬、惰性兜底时搬；
-//! 3. 从凭据库里取出的密码能真的连上服务器。
+//! 2. 从凭据库里取出的密码能真的连上服务器。
 //!
-//! 钥匙串条目用**专用账号名**（`ssh7-e2e-*`），不会碰到用户自己的主机条目。
+//! 凭据库是**唯一**的存放位置 —— SSH7 不再使用系统钥匙串（各平台一致，
+//! 也不受 macOS 钥匙串那个「每次升级都要重新授权」的折腾）。
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use russh::client::Config;
 use ssh7_lib::ssh::client::ClientHandler;
-use ssh7_lib::storage::keyring;
-use ssh7_lib::storage::secrets::{SecretBackend, SecretStore};
+use ssh7_lib::storage::secrets::SecretStore;
 
 fn env_or(key: &str, fallback: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| fallback.to_string())
@@ -55,7 +54,6 @@ fn password() -> String {
 fn vault_stores_and_reads_back_without_plaintext() {
     let dir = temp_dir("roundtrip");
     let store = SecretStore::new(&dir);
-    store.set_backend(SecretBackend::Vault, &[]).unwrap();
 
     let account = "ssh7-e2e-roundtrip/password";
     let pw = password();
@@ -79,69 +77,6 @@ fn vault_stores_and_reads_back_without_plaintext() {
         }
     }
 
-    // 清理钥匙串里可能残留的同名条目（本测试不写钥匙串，保险起见）。
-    let _ = keyring::delete(account);
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// 显式切换后端时，已有秘密被搬过去，钥匙串里不再留副本。
-#[test]
-#[ignore = "需要真实凭据文件"]
-fn switching_backend_migrates_existing_secrets() {
-    let dir = temp_dir("switch");
-    let store = SecretStore::new(&dir);
-
-    let account = format!("ssh7-e2e-switch-{}/password", uuid::Uuid::now_v7());
-
-    // 先放在钥匙串里。
-    store.set_backend(SecretBackend::Keyring, &[]).unwrap();
-    let pw = password();
-    keyring::set(&account, &pw).unwrap();
-    assert!(keyring::get(&account).unwrap().is_some());
-
-    // 切到本地加密文件。
-    store
-        .set_backend(SecretBackend::Vault, std::slice::from_ref(&account))
-        .unwrap();
-    assert_eq!(store.backend(), SecretBackend::Vault);
-
-    // 秘密已经搬到库里，钥匙串里的副本被删掉。
-    assert_eq!(store.get(&account).unwrap().as_deref(), Some(pw.as_str()));
-    assert!(
-        keyring::get(&account).unwrap().is_none(),
-        "迁移后钥匙串里不该再留副本"
-    );
-
-    let _ = keyring::delete(&account);
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// 惰性兜底：库里没有时去另一个后端找一次，找到就顺手搬回来。
-#[test]
-#[ignore = "需要真实凭据文件"]
-fn lazy_fallback_migrates_secret_found_in_other_backend() {
-    let dir = temp_dir("lazy");
-    let store = SecretStore::new(&dir);
-
-    let account = format!("ssh7-e2e-lazy-{}/password", uuid::Uuid::now_v7());
-
-    // 秘密只在钥匙串里，而当前后端是 vault。
-    store.set_backend(SecretBackend::Keyring, &[]).unwrap();
-    let pw = password();
-    keyring::set(&account, &pw).unwrap();
-    store.set_backend(SecretBackend::Vault, &[]).unwrap();
-
-    // 库里没有 → 应该去钥匙串找 → 找到后搬进库里。
-    assert_eq!(store.get(&account).unwrap().as_deref(), Some(pw.as_str()));
-    assert!(
-        keyring::get(&account).unwrap().is_none(),
-        "惰性迁移后钥匙串里不该再留副本"
-    );
-
-    // 再读一次应该直接命中库里，不再碰钥匙串。
-    assert_eq!(store.get(&account).unwrap().as_deref(), Some(pw.as_str()));
-
-    let _ = keyring::delete(&account);
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -151,7 +86,6 @@ fn lazy_fallback_migrates_secret_found_in_other_backend() {
 async fn credential_from_vault_authenticates_against_real_server() {
     let dir = temp_dir("connect");
     let store = SecretStore::new(&dir);
-    store.set_backend(SecretBackend::Vault, &[]).unwrap();
 
     let host = env_or("SSH7_E2E_HOST", "10.0.80.4");
     let port: u16 = env_or("SSH7_E2E_PORT", "22").parse().expect("端口号");
@@ -191,7 +125,7 @@ async fn credential_from_vault_authenticates_against_real_server() {
 /// 用 `SSH7_E2E_APP_CONFIG_DIR` 指向应用配置目录即可，例如：
 ///
 /// ```sh
-/// SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.alishiguang.ssh7" \
+/// SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.chuaker7.ssh7" \
 /// cargo test --test credential_e2e -- --ignored --nocapture
 /// ```
 #[test]
@@ -205,8 +139,7 @@ fn real_app_config_dir_round_trips_without_plaintext() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let store = SecretStore::new(&dir);
-    store.ensure_backend().unwrap();
-    println!("真实配置目录的后端：{}", store.backend().as_str());
+    println!("真实配置目录：{}", dir.display());
 
     let account = format!("ssh7-e2e-real-{}/password", uuid::Uuid::now_v7());
     let pw = password();

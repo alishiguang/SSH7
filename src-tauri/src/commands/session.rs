@@ -129,12 +129,12 @@ pub async fn session_connect(
         if let Credential::Password(pw) = &credential {
             let _ = state
                 .secrets
-                .set(&crate::storage::keyring::password_account(&host_id), pw);
+                .set(&crate::storage::secrets::password_account(&host_id), pw);
         }
         if let Some(pp) = request.passphrase.as_ref().filter(|p| !p.is_empty()) {
             let _ = state
                 .secrets
-                .set(&crate::storage::keyring::passphrase_account(&host_id), pp);
+                .set(&crate::storage::secrets::passphrase_account(&host_id), pp);
         }
     }
 

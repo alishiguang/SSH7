@@ -3,7 +3,7 @@
 //! 用法：
 //! ```sh
 //! SSH7_E2E_HOST=10.0.80.4 SSH7_E2E_PORT=22 SSH7_E2E_USER=root \
-//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.alishiguang.ssh7" \
+//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.chuaker7.ssh7" \
 //! cargo run --example connect_timing
 //! ```
 
@@ -17,7 +17,7 @@ use tokio::io::AsyncReadExt;
 
 use ssh7_lib::ssh::auth::Credential;
 use ssh7_lib::ssh::client::ClientHandler;
-use ssh7_lib::storage::keyring;
+use ssh7_lib::storage::secrets;
 use ssh7_lib::storage::secrets::SecretStore;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,12 +38,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- 凭据读取 ----
     let store = SecretStore::new(&dir);
-    let account = keyring::password_account("01a20ce2-32ab-7184-8683-2eec1f61bfa0");
+    let account = secrets::password_account("01a20ce2-32ab-7184-8683-2eec1f61bfa0");
     let t = Instant::now();
     let password = store.get(&account)?;
     println!(
-        "凭据读取 ({:?}): {:.1} ms  拿到={}",
-        store.backend(),
+        "凭据读取 (本地加密文件): {:.1} ms  拿到={}",
         t.elapsed().as_secs_f64() * 1000.0,
         password.is_some()
     );

@@ -29,18 +29,17 @@ use ssh7_lib::ssh::sftp::{plan_upload, SftpClient};
 /// 读到的密码只在本进程内存里待命，不落盘、不进环境变量、不打印。
 static PASSWORD: OnceLock<String> = OnceLock::new();
 
-/// 从系统钥匙串读取密码。
+/// 读取测试用密码。
 ///
-/// 优先走 App 自己的钥匙串模块（与运行时完全一致的路径）；
-/// 读不到时回退到 macOS 的 `security` CLI。
+/// SSH7 自己只往加密文件里写密码，所以这里直接从**应用配置目录**里读不到 ——
+/// 测试就走 macOS 的 `security` CLI，或者用 `SSH7_E2E_PASSWORD_FILE` 指定。
 fn keychain_password(account: &str) -> Option<String> {
     if let Some(v) = PASSWORD.get() {
         return Some(v.clone());
     }
 
-    let secret = ssh7_lib::storage::keyring::get(account)
-        .ok()
-        .flatten()
+    let secret = Some(())
+        .and(None)
         .or_else(|| {
             let out = std::process::Command::new("security")
                 .args(["find-generic-password", "-s", "ssh7", "-a", account, "-w"])

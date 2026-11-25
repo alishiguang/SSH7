@@ -166,23 +166,18 @@ export default function App() {
     knownIds.current = current
   }, [sessions])
 
-  /* ── 窗口关闭前断开全部连接 ─────────────────── */
-  useEffect(() => {
-    let dispose: (() => void) | undefined
-    void (async () => {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window')
-        dispose = await getCurrentWindow().onCloseRequested(() => {
-          for (const s of useSessions.getState().sessions) {
-            void sessionApi.disconnect(s.id).catch(() => {})
-          }
-        })
-      } catch {
-        // 非 Tauri 环境（如浏览器预览）拿不到窗口 API，忽略即可。
-      }
-    })()
-    return () => dispose?.()
-  }, [])
+  /* ── 窗口关闭：不劫持原生关闭 ─────────────────── */
+  //
+  // 这里**故意不注册** `onCloseRequested`。
+  //
+  // Tauri 的规矩是：webview 一旦监听了「关闭请求」，它就会先取消原生关闭
+  // （`prevent_close`），改由前端接手 —— 前端必须自己再调一次 `destroy()`
+  // 才算关掉。而 `destroy()` 是要过权限的：`core:window:default` 里**没有**
+  // `allow-destroy`。所以一旦注册了这个监听，又没配相应权限，窗口就永远
+  // 关不掉（点左上角红点没反应）。
+  //
+  // 关窗要做的清理（断开这扇窗的所有 SSH 会话）放在 Rust 侧：
+  // 窗口 `Destroyed` 时统一回收 —— 不依赖前端还在不在（前端马上就死了）。
 
   /* ── 建立连接 ───────────────────────────────── */
   const handleConnect = useCallback(
@@ -293,10 +288,30 @@ export default function App() {
   )
 
   /**
-   * 双击主机：把这台机器开到一个**独立窗口**里。
+   * 双击主机：在**当前窗口**里激活这台机器。
    *
-   * 已经开着就别再开一扇 —— Rust 侧知道那扇窗在哪，直接把它叫到前面；
-   * 开着好几扇就挑一扇（「切换到其中一个」）。
+   * 已经开着就切到那个标签页（双击不该开出两个重复的会话），
+   * 没开着才新连一个。
+   */
+  const handleActivateHost = useCallback(
+    async (host: SavedHost) => {
+      const existing = useSessions
+        .getState()
+        .findByTarget(host.host, host.port, host.username)
+      if (existing) {
+        setActive(existing.id)
+        return
+      }
+      await openHostSession(host)
+    },
+    [openHostSession, setActive],
+  )
+
+  /**
+   * 把这台机器开到一个**独立窗口**里。
+   *
+   * 从主机右键菜单触发。已经开着就别再开一扇 —— Rust 侧知道那扇窗在哪，
+   * 直接把它叫到前面；开着好几扇就挑一扇（「切换到其中一个」）。
    */
   const handleOpenInWindow = useCallback(
     async (host: SavedHost) => {
@@ -564,7 +579,7 @@ export default function App() {
             setDialogOpen(true)
           }}
           onOpenNewSession={(host) => void openHostSession(host)}
-          onOpenInWindow={(host) => void handleOpenInWindow(host)}
+          onActivateHost={(host) => void handleActivateHost(host)}
           onEditHost={(h) => {
             setEditingHost(h)
             setDialogOpen(true)

@@ -41,6 +41,11 @@ jobs:
           npm run tauri build -- --target aarch64-apple-darwin
           npm run tauri build -- --target x86_64-apple-darwin
 
+      # 权限是编译期写进二进制的；缓存（rust-cache）可能留下**上一版**的权限。
+      # 发布之前必须逐个架构查一遍 —— 源码改了不等于包里带着修复。
+      - name: Verify artifacts
+        run: ./scripts/check-artifacts.sh
+
       - name: Collect artifacts
         run: |
           mkdir -p dist-release

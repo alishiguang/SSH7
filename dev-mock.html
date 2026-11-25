@@ -27,6 +27,7 @@
     <div id="mock-listen-targets" style="position: fixed; left: -9999px"></div>
     <!-- ?selftest=1 的自检结论。 -->
     <div id="mock-selftest" style="position: fixed; left: -9999px"></div>
+    <div id="mock-calls" style="position: fixed; left: -9999px"></div>
 
     <!--
       仅用于**前端 UI 开发**：用一套假的 Tauri IPC 响应把界面跑起来，
@@ -127,6 +128,10 @@
           // 前端要拿这个标签去注册定向监听。
           metadata: { currentWindow: { label: MOCK_WINDOW_LABEL } },
           invoke: async function (cmd, args) {
+            // 记录每次命令调用 —— 自动化测试用它断言「双击到底调了哪个命令」。
+            ;(window.__mockCalls = window.__mockCalls || []).push(cmd)
+            var callNote = document.getElementById('mock-calls')
+            if (callNote) callNote.textContent = (window.__mockCalls || []).join(',')
             switch (cmd) {
               case 'plugin:event|listen': {
                 var a = args || {}
@@ -152,6 +157,9 @@
                 }
                 return null
               }
+              case 'plugin:app|version':
+                // 设置面板里显示的版本号。改版本时记得同步这里。
+                return '1.8.0'
               case 'host_list':
                 return { hosts: hosts.slice(), groups: groups.slice() }
               case 'host_save': {

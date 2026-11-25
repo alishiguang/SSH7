@@ -54,10 +54,19 @@ pub fn run() {
         })
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
+            // 标识符改了（账号改名），数据目录也跟着换了 —— 旧目录还在就搬过来，
+            // 否则用户的主机列表和凭据库会「凭空消失」。
+            match crate::storage::legacy_dir::migrate_legacy_config_dir(&config_dir) {
+                Ok(crate::storage::legacy_dir::Migration::Moved { from }) => {
+                    tracing::info!("旧配置目录已迁移到新位置：{from}");
+                }
+                Ok(_) => {}
+                Err(err) => tracing::warn!("旧配置目录迁移失败：{err}"),
+            }
             std::fs::create_dir_all(&config_dir)?;
             let state = AppState::new(app.handle().clone(), config_dir);
-            // 首次运行把当前凭据后端落盘，让「用的是哪个后端」在磁盘上显式可查。
-            state.secrets.ensure_backend()?;
+            // 后端只剩一种了，旧版本留下的偏好文件没有意义 —— 顺手清掉。
+            state.secrets.remove_legacy_prefs();
             app.manage(state);
             Ok(())
         })
@@ -70,8 +79,6 @@ pub fn run() {
             commands::host::host_group_create,
             commands::host::host_groups_reorder,
             commands::host::host_move_to_group,
-            commands::credentials::credential_store_info,
-            commands::credentials::credential_store_set,
             commands::session::session_connect,
             commands::session::session_test,
             commands::session::session_write,

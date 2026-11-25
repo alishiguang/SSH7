@@ -18,7 +18,7 @@
 //! ```sh
 //! cd src-tauri
 //! SSH7_E2E_HOST=10.0.80.4 SSH7_E2E_PORT=22 SSH7_E2E_USER=root \
-//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.alishiguang.ssh7" \
+//! SSH7_E2E_APP_CONFIG_DIR="$HOME/Library/Application Support/com.chuaker7.ssh7" \
 //! cargo test --test osc7_quiet_e2e -- --ignored --nocapture --test-threads=1
 //! ```
 
@@ -30,7 +30,7 @@ use russh::Pty;
 
 use ssh7_lib::ssh::client::ClientHandler;
 use ssh7_lib::ssh::tracker::{self, ShellKind};
-use ssh7_lib::storage::keyring;
+use ssh7_lib::storage::secrets;
 use ssh7_lib::storage::secrets::SecretStore;
 
 /// 与生产代码一致：关掉远端 PTY 的回显。
@@ -67,7 +67,7 @@ async fn hook_install_leaves_no_trace_on_screen() {
 
     // 凭据从本地加密库取，跟应用里走的是同一条路。
     let store = SecretStore::new(&dir);
-    let account = keyring::password_account(&env_or("SSH7_E2E_HOST_ID", ""));
+    let account = secrets::password_account(&env_or("SSH7_E2E_HOST_ID", ""));
     let password = store
         .get(&account)
         .expect("读取凭据失败")

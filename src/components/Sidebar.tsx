@@ -11,8 +11,13 @@ interface Props {
   onConnect: () => void
   /** 开启新会话（悬停时的 ＋ 与右键菜单里的「开启新会话」）。 */
   onOpenNewSession: (host: SavedHost) => void
-  /** 双击主机行：把这台机器开到一个独立窗口里。 */
-  onOpenInWindow: (host: SavedHost) => void
+  /**
+   * 双击主机行：在**当前窗口**里激活这台机器。
+   *
+   * 已经开着就切到那个标签页，没开着才新连一个 ——
+   * 双击不该在同一台机器上开出两个重复的标签。
+   */
+  onActivateHost: (host: SavedHost) => void
   onEditHost: (host: SavedHost) => void
   /** 主机右键菜单。 */
   onHostMenu: (host: SavedHost, x: number, y: number) => void
@@ -37,7 +42,7 @@ const DRAG_THRESHOLD = 5
 export default function Sidebar({
   onConnect,
   onOpenNewSession,
-  onOpenInWindow,
+  onActivateHost,
   onEditHost,
   onHostMenu,
   onGroupMenu,
@@ -376,10 +381,10 @@ export default function Sidebar({
       }}
       onDoubleClick={() => {
         if (skipClickRef.current) return
-        // 双击 = 把这台机器开到一个独立窗口里。
+        // 双击 = 在**当前窗口**开一个会话标签页。
         // 前两次单击已经把「选中 → 取消选中」走了一遍，这里把状态摆正。
         setSelectedHost(h.id)
-        onOpenInWindow(h)
+        onActivateHost(h)
       }}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -388,7 +393,7 @@ export default function Sidebar({
       onMouseEnter={() => setHoverHost(h.id)}
       onMouseLeave={() => setHoverHost(null)}
       onPointerDown={(e) => startHostDrag(e, h)}
-      title="单击选中；双击在新窗口打开；悬停出现 ＋ 开启新会话；右键有更多操作；可拖到别的分组"
+      title="单击选中；双击在当前窗口打开会话；悬停出现 ＋ 开启新会话；右键有更多操作；可拖到别的分组"
     >
       <Icon name="server" size={13} className="host-icon" />
       <div className="host-row-body">

@@ -8,8 +8,8 @@ use tauri::State;
 use crate::commands::AppState;
 use crate::error::{AppError, AppResult};
 use crate::storage::hosts::{HostsStore, SavedHost};
-use crate::storage::keyring;
 use crate::storage::secrets::SecretStore;
+use crate::storage::secrets::{passphrase_account, password_account};
 use crate::types::{HostListDto, HostSaveRequest, SavedHostDto};
 
 /// 主机列表 + 分组清单。
@@ -81,20 +81,20 @@ pub fn save_host(
 
     // 密码
     if let Some(pw) = request.password.as_ref().filter(|p| !p.is_empty()) {
-        secrets.set(&keyring::password_account(&host.id), pw)?;
+        secrets.set(&password_account(&host.id), pw)?;
         host.has_password = true;
     } else if request.password.as_ref().is_some() {
         // 显式传空串表示清除密码。
-        let _ = secrets.delete(&keyring::password_account(&host.id));
+        let _ = secrets.delete(&password_account(&host.id));
         host.has_password = false;
     }
 
     // 私钥口令
     if let Some(pp) = request.passphrase.as_ref().filter(|p| !p.is_empty()) {
-        secrets.set(&keyring::passphrase_account(&host.id), pp)?;
+        secrets.set(&passphrase_account(&host.id), pp)?;
         host.has_passphrase = true;
     } else if request.passphrase.as_ref().is_some() {
-        let _ = secrets.delete(&keyring::passphrase_account(&host.id));
+        let _ = secrets.delete(&passphrase_account(&host.id));
         host.has_passphrase = false;
     }
 
@@ -105,8 +105,8 @@ pub fn save_host(
 /// 删除主机，同时清理凭据库条目。
 #[tauri::command]
 pub fn host_delete(state: State<'_, AppState>, host_id: String) -> AppResult<HostListDto> {
-    let _ = state.secrets.delete(&keyring::password_account(&host_id));
-    let _ = state.secrets.delete(&keyring::passphrase_account(&host_id));
+    let _ = state.secrets.delete(&password_account(&host_id));
+    let _ = state.secrets.delete(&passphrase_account(&host_id));
     let (hosts, groups) = state.hosts.remove(&host_id)?;
     Ok(to_list(hosts, groups))
 }
@@ -180,18 +180,17 @@ pub fn host_move_to_group(
 /// 读取某主机保存的密码。**只供 Rust 内部连接流程使用**，
 /// 不暴露给前端 —— 前端永远拿不到明文。
 pub(crate) fn load_password(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {
-    store.get(&keyring::password_account(host_id))
+    store.get(&password_account(host_id))
 }
 
 /// 读取某主机保存的私钥口令。
 pub(crate) fn load_passphrase(store: &SecretStore, host_id: &str) -> AppResult<Option<String>> {
-    store.get(&keyring::passphrase_account(host_id))
+    store.get(&passphrase_account(host_id))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::secrets::SecretBackend;
     use crate::types::AuthType;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -201,15 +200,13 @@ mod tests {
         dir
     }
 
-    /// 建一套不碰系统钥匙串的存储（本地加密文件）。
+    /// 建一套隔离的存储（临时目录里的本地加密文件）。
+    ///
+    /// 凭据只往加密文件里写，不会碰用户的系统钥匙串。
     fn stores(tag: &str) -> (HostsStore, SecretStore, std::path::PathBuf) {
         let dir = temp_dir(tag);
         let hosts = HostsStore::new(&dir);
         let secrets = SecretStore::new(&dir);
-        // 明确切到本地加密库 —— 测试不该去动用户的系统钥匙串。
-        secrets
-            .set_backend(SecretBackend::Vault, &[])
-            .expect("切到本地加密库");
         (hosts, secrets, dir)
     }
 
@@ -298,7 +295,7 @@ mod tests {
         // 凭据库里能读回来。
         let id = &list.hosts[0].id;
         let stored = secrets
-            .get(&keyring::password_account(id))
+            .get(&password_account(id))
             .expect("读凭据")
             .expect("凭据库里应该有密码");
         assert_eq!(stored, "hunter2-should-not-leak");
@@ -336,7 +333,7 @@ mod tests {
 
         assert!(list.hosts[0].has_password, "标记应该还在");
         let stored = secrets
-            .get(&keyring::password_account("fixed-id"))
+            .get(&password_account("fixed-id"))
             .expect("读凭据")
             .expect("密码不该被清掉");
         assert_eq!(stored, "keep-me");

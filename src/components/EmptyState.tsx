@@ -85,7 +85,7 @@ export default function EmptyState({
             onClick={() => void openExternal(REPO_URL)}
             title={REPO_URL}
           >
-            GITHUB.COM/ALISHIGUANG/SSH7
+            GITHUB.COM/CHUAKER7/SSH7
           </button>
         </div>
       </div>

@@ -123,19 +123,30 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
     let unlistenClosed: (() => void) | undefined
 
     void (async () => {
-      unlistenData = await events.onData((e) => {
-        if (e.sessionId === sessionId) term.write(e.data)
-      })
-      unlistenClosed = await events.onClosed((e) => {
-        if (e.sessionId !== sessionId) return
-        term.write('\r\n\x1b[38;2;247;1;33m[连接已断开]\x1b[0m\r\n')
-      })
-      if (disposed) {
-        unlistenData?.()
-        unlistenClosed?.()
-        return
+      try {
+        unlistenData = await events.onData((e) => {
+          if (e.sessionId === sessionId) term.write(e.data)
+        })
+        unlistenClosed = await events.onClosed((e) => {
+          if (e.sessionId !== sessionId) return
+          term.write('\r\n\x1b[38;2;247;1;33m[连接已断开]\x1b[0m\r\n')
+        })
+        if (disposed) {
+          unlistenData?.()
+          unlistenClosed?.()
+          return
+        }
+        await sessionApi.attach(sessionId).catch(() => {})
+      } catch (e) {
+        // 监听注册失败（比如窗口没有对应权限）会让终端**一直空白**，
+        // 而用户看不出发生了什么 —— 只能看到一块黑屏。
+        // 所以这里把原因直接写到终端里。
+        if (disposed) return
+        const msg = e instanceof Error ? e.message : String(e)
+        term.write(
+          `\r\n\x1b[38;2;247;1;33m[终端无法接收远端输出]\x1b[0m\r\n${msg}\r\n`,
+        )
       }
-      await sessionApi.attach(sessionId).catch(() => {})
     })()
 
     return () => {
