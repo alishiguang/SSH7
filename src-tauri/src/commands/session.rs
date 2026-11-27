@@ -16,7 +16,7 @@ use crate::types::{AuthType, ConnectRequest, SessionInfo, TestResult};
 ///
 /// 密码与私钥口令的来源优先级：
 /// 1. 本次请求里显式传入的值；
-/// 2. 凭据库中为该 `host_id` 保存的值（复��已保存主机时走这条路径）。
+/// 2. 凭据库中为该 `host_id` 保存的值（复用已保存主机时走这条路径）。
 ///
 /// 这样前端在任何情况下都拿不到明文秘密。
 fn resolve_credential(request: &ConnectRequest, store: &SecretStore) -> AppResult<Credential> {
@@ -85,6 +85,14 @@ pub async fn session_connect(
         .cloned()
         .unwrap_or_else(|| format!("{username}@{host}"));
 
+    // 主机 id **提前**定下来：session 内部的「连接配置身份」和返回给前端的
+    // 用的是同一个值。
+    //
+    // 前端要靠这个 id 从加密凭据库里取回密码 —— 少了它，断线之后就再也
+    // 连不上了（缺陷 #43）。原来这个 id 是「保存主机时」才生成的，前端
+    // 压根拿不到：手动新建的主机，密码进了凭据库，却没人知道它的 id。
+    let host_id = resolve_host_id(&request);
+
     let session = client::connect(
         &state.app,
         client::ConnectParams {
@@ -96,7 +104,7 @@ pub async fn session_connect(
             auth_type: request.auth_type,
             // 这个会话归**发起连接的这扇窗**所有 —— 终端数据只发给它。
             window_label: window.label().to_string(),
-            host_id: request.host_id.clone(),
+            host_id: host_id.clone(),
         },
     )
     .await?;
@@ -106,8 +114,7 @@ pub async fn session_connect(
 
     // 保存主机与秘密（秘密进凭据库，hosts.json 不含明文）。
     if request.save.unwrap_or(false) {
-        let host_id = request
-            .host_id
+        let host_id = host_id
             .clone()
             .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
 
@@ -139,6 +146,27 @@ pub async fn session_connect(
     }
 
     Ok(info)
+}
+
+/// 决定这次连接用的主机 id（也就是「连接配置」的身份）。
+///
+/// - **要保存主机**：请求里带了 id 就用它（覆盖已有主机），没带就现生成一个。
+/// - **不保存**：只有请求里带了才用。
+///
+/// 提前定下来的原因：前端要靠它从加密凭据库里取回密码，断线之后才连得上。
+/// 晚一点定下来，前端就永远拿不到 —— 手动新建的主机尤其明显（密码存进了
+/// 凭据库，却没人知道它存在哪把钥匙下）。
+fn resolve_host_id(request: &ConnectRequest) -> Option<String> {
+    let requested = request
+        .host_id
+        .as_ref()
+        .filter(|id| !id.trim().is_empty())
+        .cloned();
+    if request.save.unwrap_or(false) {
+        Some(requested.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()))
+    } else {
+        requested
+    }
 }
 
 /// 连通性测试：完成握手与认证后立即断开，不打开 shell。
@@ -269,4 +297,65 @@ pub async fn session_disconnect(state: State<'_, AppState>, session_id: String) 
         session.shutdown().await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(save: bool, host_id: Option<&str>) -> ConnectRequest {
+        ConnectRequest {
+            label: None,
+            group: None,
+            host: "10.0.0.1".into(),
+            port: Some(22),
+            username: "root".into(),
+            auth_type: AuthType::Password,
+            password: None,
+            private_key_path: None,
+            passphrase: None,
+            save: Some(save),
+            host_id: host_id.map(str::to_string),
+        }
+    }
+
+    /// 缺陷 #43 的回归测试：保存主机时即便请求里没带 id，也必须有一个 ——
+    /// 前端要靠它从加密凭据库里取回密码。
+    #[test]
+    fn saving_without_host_id_generates_one() {
+        let id = resolve_host_id(&request(true, None)).expect("保存主机时必须有 id");
+        assert!(!id.trim().is_empty());
+    }
+
+    /// 保存时带了 id 就用它 —— 那是「覆盖已有主机」。
+    #[test]
+    fn saving_with_host_id_keeps_it() {
+        assert_eq!(
+            resolve_host_id(&request(true, Some("h1"))).as_deref(),
+            Some("h1")
+        );
+    }
+
+    /// 不保存主机时，没带 id 就没有 id —— 不凭空造一个。
+    #[test]
+    fn not_saving_without_host_id_has_none() {
+        assert!(resolve_host_id(&request(false, None)).is_none());
+    }
+
+    /// 不保存主机但带了 id（比如复用已有主机的凭据）→ 照用。
+    #[test]
+    fn not_saving_with_host_id_keeps_it() {
+        assert_eq!(
+            resolve_host_id(&request(false, Some("h1"))).as_deref(),
+            Some("h1")
+        );
+    }
+
+    /// 空字符串不算 id —— 不能拿它当钥匙。
+    #[test]
+    fn blank_host_id_is_ignored() {
+        assert!(resolve_host_id(&request(false, Some("   "))).is_none());
+        let generated = resolve_host_id(&request(true, Some("  "))).expect("保存时要生成一个");
+        assert!(!generated.trim().is_empty());
+    }
 }

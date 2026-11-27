@@ -28,6 +28,10 @@
     <!-- ?selftest=1 的自检结论。 -->
     <div id="mock-selftest" style="position: fixed; left: -9999px"></div>
     <div id="mock-calls" style="position: fixed; left: -9999px"></div>
+    <!-- 一共连过几次（自动化测试用来断言「重连真的发生了」）。 -->
+    <div id="mock-connect-seq" style="position: fixed; left: -9999px"></div>
+    <!-- 最近一次模拟断线的结果。 -->
+    <div id="mock-dropped" style="position: fixed; left: -9999px"></div>
 
     <!--
       仅用于**前端 UI 开发**：用一套假的 Tauri IPC 响应把界面跑起来，
@@ -239,18 +243,52 @@
                   (location.search.match(/[?&]delay=(\d+)/) || [])[1] || '900',
                   10
                 )
+                // 第几次连接 —— 「重连」就是第二次及以后。
+                var seq = (window.__mockConnectSeq = (window.__mockConnectSeq || 0) + 1)
                 await new Promise(function (res) {
                   setTimeout(res, ms)
                 })
+                // ?fail=2 → 从第 2 次连接起都失败（模拟「重连失败」）。
+                // ?fail=2,3,4 → 只让第 2/3/4 次失败，第 5 次成功 ——
+                //   用来验证「自动重连全挂了之后，手动点一下能救回来」。
+                var failRaw = (location.search.match(/[?&]fail=([\d,]+)/) || [])[1] || ''
+                var failSeqs = failRaw
+                  ? failRaw.split(',').map(function (n) {
+                      return parseInt(n, 10)
+                    })
+                  : []
+                // ?failOnce=2 → **只有**第 2 次连接失败，第 3 次就成功。
+                var failOnceSeq = parseInt(
+                  (location.search.match(/[?&]failOnce=(\d+)/) || [])[1] || '0',
+                  10
+                )
+                var shouldFail =
+                  (failOnceSeq && seq === failOnceSeq) ||
+                  (failSeqs.length === 1 && seq >= failSeqs[0]) ||
+                  (failSeqs.length > 1 && failSeqs.indexOf(seq) >= 0)
+                if (shouldFail) {
+                  var err = new Error('认证失败：密码错误，或本机没有这台机器的凭据')
+                  err.code = 'AUTH_FAILED'
+                  err.hint = '检查用户名与密码后重试'
+                  throw err
+                }
                 var sid = 's' + Math.random().toString(36).slice(2, 10)
+                // 真实实现里，保存主机时后端会分配 id 并**回传给前端** ——
+                // 前端要靠它从加密凭据库里取回密码。前端没带 id 时这里也补一个。
+                var hid = r.hostId
+                if (!hid && r.save) hid = 'mock-host-' + Date.now()
                 // 记下来 —— 「双击开窗」要知道这台机器是不是已经开着。
                 mockSessions.push({
                   sessionId: sid,
-                  hostId: r.hostId,
+                  hostId: hid,
                   host: r.host,
                   port: r.port || 22,
                   username: r.username,
                 })
+                // 连接次数写进 DOM —— 自动化测试靠它断言「重连真的发生了」。
+                var seqNote = document.getElementById('mock-connect-seq')
+                if (seqNote) seqNote.textContent = String(seq)
+                scheduleAutoDrop(sid)
                 return {
                   sessionId: sid,
                   label: r.label || r.username + '@' + r.host,
@@ -258,8 +296,18 @@
                   port: r.port || 22,
                   username: r.username,
                   authType: r.authType || 'password',
-                  hostId: r.hostId,
+                  hostId: hid,
                 }
+              }
+              case 'session_disconnect': {
+                // 真机上「断开连接」后 Rust 会发一个 session://closed ——
+                // 前端据此把会话标成已断开。这里得复现，不然测不到
+                // 「用户主动断开的**不该**自动重连」这条规则。
+                var dsid = (args && args.sessionId) || null
+                if (dsid) {
+                  window.__mockEmit('session://closed', { sessionId: dsid }, MOCK_WINDOW_LABEL)
+                }
+                return null
               }
               case 'session_open_in_window': {
                 var req = (args && args.request) || {}
@@ -428,6 +476,38 @@
           var note = document.getElementById('mock-emit-count')
           if (note) note.textContent = String(delivered)
           return delivered
+        }
+
+        /**
+         * 模拟连接被远端掐断。
+         *
+         * 真机上这是 `session://closed` 事件 —— 前端据此把会话标成
+         * 「已断开」，并尝试自己接回去。
+         */
+        window.__mockDrop = function (sessionId) {
+          var n = window.__mockEmit(
+            'session://closed',
+            { sessionId: sessionId },
+            MOCK_WINDOW_LABEL
+          )
+          var note = document.getElementById('mock-dropped')
+          if (note) note.textContent = sessionId + ':' + n
+          return n
+        }
+
+        /**
+         * ?autodrop=3000 —— 连接成功后 3 秒自动「断开」，
+         * 用来在浏览器里观察断开 → 重连的整条链路。
+         */
+        function scheduleAutoDrop(sid) {
+          var dropAfter = parseInt(
+            (location.search.match(/[?&]autodrop=(\d+)/) || [])[1] || '0',
+            10
+          )
+          if (!dropAfter) return
+          setTimeout(function () {
+            window.__mockDrop(sid)
+          }, dropAfter)
         }
 
         /**

@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type { UnlistenFn } from '@tauri-apps/api/event'
+
 import { events, sessionApi, windowApi } from './api/bridge'
-import type { ConnectRequest, HostSaveRequest, SavedHost } from './api/types'
+import type {
+  AppErrorPayload,
+  ConnectRequest,
+  HostSaveRequest,
+  SavedHost,
+} from './api/types'
 import ConnectDialog from './components/ConnectDialog'
 import ConfirmDialog, { type ConfirmSpec } from './components/ConfirmDialog'
 import ContextMenu, { type ContextMenuItem } from './components/ContextMenu'
 import EmptyState from './components/EmptyState'
 import FilePanel from './components/FilePanel'
 import { Icon } from './components/Icons'
+import SessionOverlay from './components/SessionOverlay'
 import SessionTabs from './components/SessionTabs'
 import SettingsPanel from './components/SettingsPanel'
 import Sidebar from './components/Sidebar'
@@ -15,7 +23,11 @@ import TerminalView from './components/TerminalView'
 import Toasts from './components/Toasts'
 import { useDrop } from './store/drop'
 import { useHosts } from './store/hosts'
-import { useSessions } from './store/sessions'
+import {
+  buildReconnectRequest,
+  RECONNECT_DELAYS,
+  useSessions,
+} from './store/sessions'
 import {
   TERMINAL_FONT_DEFAULT,
   applyUiScale,
@@ -26,6 +38,27 @@ import { useUi } from './store/ui'
 
 /** 占位会话的序号：连接建立之前先用它占个位置。 */
 let pendingSeq = 0
+
+/** 等一会儿（自动重连的退避）。 */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * 把后端抛出来的东西统一成结构化错误。
+ *
+ * 自动重连彻底失败时，界面上要能说清「为什么没连上」——
+ * 总不能只丢一句「连接已断开」让人干瞪眼。
+ */
+function toAppError(e: unknown): AppErrorPayload {
+  if (e && typeof e === 'object' && 'code' in e) return e as AppErrorPayload
+  const err = e as Error | undefined
+  return {
+    code: 'INTERNAL',
+    message: err?.message ? err.message : String(e),
+    detail: 'detail' in (e as object) ? String((e as { detail?: unknown }).detail) : undefined,
+  }
+}
 
 export default function App() {
   const sessions = useSessions((s) => s.sessions)
@@ -49,7 +82,8 @@ export default function App() {
      放在 store 里，终端才知道「这会儿别抢焦点」。 */
   const renamingSession = useUi((s) => s.renamingSessionId)
   const setRenamingSession = useUi((s) => s.setRenamingSession)
-  const transfers = useTransfers((s) => s)
+  /** 只取动作本身 —— store 的 state 每次更新都是新对象，拿它当依赖会让监听反复重注册。 */
+  const transferProgress = useTransfers((s) => s.progress)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<SavedHost | null>(null)
@@ -67,6 +101,35 @@ export default function App() {
   const askConfirm = useCallback((spec: ConfirmSpec) => setConfirm(spec), [])
 
   const initDrop = useDrop((s) => s.init)
+
+  /**
+   * 用户**主动**断开的会话。
+   *
+   * 这些断开之后不该自动重连 —— 用户点「断开连接」就是想断着，
+   * 结果它自己又连回来，比不重连还烦。
+   */
+  const userClosedRef = useRef<Set<string>>(new Set())
+
+  /**
+   * 正在重连的会话。
+   *
+   * 同一条断开事件有可能被送到好几次（监听器重复注册、远端连着报了几次
+   * closed），每来一次就开一条重连循环的话，会同时发出好几个连接请求 ——
+   * 轻则刷屏，重则把服务器连接数打满。
+   *
+   * 这里给每个会话上一把锁：已经在重连的直接跳过。
+   */
+  const reconnectingRef = useRef<Set<string>>(new Set())
+
+  /**
+   * 自动重连的回调转发。
+   *
+   * 事件监听那个 effect 只注册一次，不能因为回调换了个引用就重跑 ——
+   * 用 ref 转发出去，effect 的依赖就干净了。
+   */
+  const autoReconnectRef = useRef<(sessionId: string) => Promise<void>>(
+    async () => {},
+  )
 
   /* ── 启动：加载主机、注册原生拖放监听 ────────── */
   useEffect(() => {
@@ -111,45 +174,66 @@ export default function App() {
 
   /* ── 全局事件监听（只注册一次）──────────────── */
   useEffect(() => {
+    // 监听注册是**异步**的，而 effect 可能在这期间就被清理掉
+    // （StrictMode 的双挂载、依赖变化）。那会儿拿到的 unlisten 必须立刻注销 ——
+    // 否则监听器会越攒越多：一次断线就会触发好几次重连。
+    let disposed = false
     const cleanups: Array<() => void> = []
+    const reg = (p: Promise<UnlistenFn>) => {
+      void p.then((un) => {
+        if (disposed) un()
+        else cleanups.push(un)
+      })
+    }
 
-    void events
-      .onCwd((e) => {
+    reg(
+      events.onCwd((e) => {
         patchSession(e.sessionId, { cwd: e.cwd })
-      })
-      .then((un) => cleanups.push(un))
+      }),
+    )
 
-    void events
-      .onClosed((e) => {
+    reg(
+      events.onClosed((e) => {
+        // 标签页已经关了（会话被移除）—— 不用管。
+        const s = useSessions.getState().sessions.find((x) => x.id === e.sessionId)
+        if (!s) return
         patchSession(e.sessionId, { status: 'disconnected' })
-      })
-      .then((un) => cleanups.push(un))
+        // 用户自己点的「断开连接」—— 就该断着，别自己接回去。
+        if (userClosedRef.current.has(e.sessionId)) {
+          userClosedRef.current.delete(e.sessionId)
+          return
+        }
+        // 意外断的（网络抖动、远端重启、会话超时）：自己接回去。
+        void autoReconnectRef.current(e.sessionId)
+      }),
+    )
 
-    void events
-      .onError((e) => {
+    reg(
+      events.onError((e) => {
         patchSession(e.sessionId, { status: 'failed', error: e.error })
         reportError('会话出错', e.error)
-      })
-      .then((un) => cleanups.push(un))
+      }),
+    )
 
     // 传输进度按 transfer_id 关联（缺陷 #6），不再用文件名匹配。
-    void events
-      .onTransfer((e) => {
-        transfers.progress(e.transferId, e.transferred, e.total, e.percent)
-      })
-      .then((un) => cleanups.push(un))
+    reg(
+      events.onTransfer((e) => {
+        transferProgress(e.transferId, e.transferred, e.total, e.percent)
+      }),
+    )
 
     // 「定位到那扇窗」—— 别的窗口里开着同一台机器时，它会叫我们切过去。
-    void events
-      .onFocusSession((e) => {
+    reg(
+      events.onFocusSession((e) => {
         setActive(e.sessionId)
-      })
-      .then((un) => cleanups.push(un))
+      }),
+    )
 
     return () => {
+      disposed = true
       for (const c of cleanups) c()
     }
-  }, [patchSession, reportError, transfers, setActive])
+  }, [patchSession, reportError, transferProgress, setActive])
 
   /* ── 会话被移除时真正断开连接 ───────────────────
      缺陷 #2 / #9：旧版关闭标签只是把 UI 移除，SSH 连接一直挂着。
@@ -180,6 +264,26 @@ export default function App() {
   // 窗口 `Destroyed` 时统一回收 —— 不依赖前端还在不在（前端马上就死了）。
 
   /* ── 建立连接 ───────────────────────────────── */
+  /**
+   * 真正去连一次，成功返回可以直接写进 store 的会话状态。
+   *
+   * **凭据来源必须记下来**（`hostId` / `privateKeyPath`）——
+   * 断线之后要靠它们把密码从加密凭据库里取回来；没有它们，就再也连不上。
+   */
+  const doConnect = useCallback(async (req: ConnectRequest) => {
+    const info = await sessionApi.connect(req)
+    return {
+      id: info.sessionId,
+      label: info.label,
+      host: info.host,
+      port: info.port,
+      username: info.username,
+      authType: info.authType,
+      hostId: info.hostId,
+      privateKeyPath: req.privateKeyPath,
+    }
+  }, [])
+
   const handleConnect = useCallback(
     async (req: ConnectRequest, opts?: { pending?: boolean }) => {
       // 从主机列表点进来时，先把「正在连接」摆出来：完整走一遍 SSH 握手
@@ -196,32 +300,17 @@ export default function App() {
         })
       }
       try {
-        const info = await sessionApi.connect(req)
+        const next = await doConnect(req)
         if (pendingId) {
           // 换成后端的真实会话：标签页原地替换，不闪。
-          replaceSession(pendingId, {
-            id: info.sessionId,
-            label: info.label,
-            host: info.host,
-            port: info.port,
-            username: info.username,
-            authType: info.authType,
-            status: 'connected',
-          })
+          replaceSession(pendingId, { ...next, status: 'connected' })
         } else {
-          beginSession({
-            id: info.sessionId,
-            label: info.label,
-            host: info.host,
-            port: info.port,
-            username: info.username,
-            authType: info.authType,
-          })
-          patchSession(info.sessionId, { status: 'connected' })
+          beginSession(next)
+          patchSession(next.id, { status: 'connected' })
         }
         setDialogOpen(false)
         setEditingHost(null)
-        push({ kind: 'success', title: '已连接', message: info.label })
+        push({ kind: 'success', title: '已连接', message: next.label })
         // 保存主机后刷新左侧列表（Rust 侧已经落盘）。
         if (req.save) {
           void loadHosts().catch(() => {})
@@ -233,8 +322,98 @@ export default function App() {
         throw e
       }
     },
-    [beginSession, patchSession, replaceSession, removeSession, push, reportError, loadHosts],
+    [
+      beginSession,
+      patchSession,
+      replaceSession,
+      removeSession,
+      push,
+      reportError,
+      loadHosts,
+      doConnect,
+    ],
   )
+
+  /* ── 重新连接 ─────────────────────────────────── */
+  /**
+   * 手动重连：用户点「重新连接」按钮时走这里。
+   *
+   * **原地重连** —— 标签页不新建、不挪位置，成功后把会话换成新的
+   * （后端每次连接都会发新的 session id）。
+   */
+  const handleReconnect = useCallback(
+    async (sessionId: string) => {
+      const current = useSessions.getState().sessions.find((s) => s.id === sessionId)
+      if (!current) return
+      // 已经在重连了就别再发一次 —— 连点两下「重新连接」不该开两条连接。
+      if (reconnectingRef.current.has(sessionId)) return
+      reconnectingRef.current.add(sessionId)
+      patchSession(sessionId, { status: 'reconnecting', error: undefined, attempt: 1 })
+      try {
+        const next = await doConnect(buildReconnectRequest(current))
+        replaceSession(sessionId, { ...next, status: 'connected' })
+        push({ kind: 'success', title: '已重新连接', message: next.label })
+      } catch (e) {
+        patchSession(sessionId, { status: 'disconnected', error: toAppError(e) })
+        reportError('重新连接失败', e as never)
+      } finally {
+        reconnectingRef.current.delete(sessionId)
+      }
+    },
+    [doConnect, patchSession, replaceSession, push, reportError],
+  )
+
+  /**
+   * 自动重连：连接**意外**断掉时自己接回去。
+   *
+   * 用户主动点的「断开连接」不算 —— 那种断开就该老老实实断着，
+   * 否则用户会发现「我明明断开了，它又连回来了」。
+   */
+  const autoReconnect = useCallback(
+    async (sessionId: string) => {
+      // 同一条断开事件可能被送到好几次 —— 只允许一条重连循环。
+      if (reconnectingRef.current.has(sessionId)) return
+      reconnectingRef.current.add(sessionId)
+      // 最后一次失败的原因 —— 全都试完了就把它摆到界面上。
+      let lastError: AppErrorPayload | undefined
+      try {
+        for (let i = 0; i < RECONNECT_DELAYS.length; i++) {
+          const before = useSessions.getState().sessions.find((s) => s.id === sessionId)
+          if (!before) return
+          patchSession(sessionId, {
+            status: 'reconnecting',
+            error: undefined,
+            attempt: i + 1,
+          })
+          if (RECONNECT_DELAYS[i] > 0) await sleep(RECONNECT_DELAYS[i])
+          // 等退避的这段时间里，用户可能已经把标签关了。
+          const current = useSessions.getState().sessions.find((s) => s.id === sessionId)
+          if (!current) return
+          try {
+            const next = await doConnect(buildReconnectRequest(current))
+            replaceSession(sessionId, { ...next, status: 'connected' })
+            push({ kind: 'success', title: '已重新连接', message: next.label })
+            return
+          } catch (e) {
+            // 这一次没成，退避后再试。
+            lastError = toAppError(e)
+          }
+        }
+        // 都试过了还是不行 —— 停下来，让用户自己决定要不要继续。
+        patchSession(sessionId, {
+          status: 'disconnected',
+          attempt: RECONNECT_DELAYS.length,
+          error: lastError,
+        })
+      } finally {
+        reconnectingRef.current.delete(sessionId)
+      }
+    },
+    [doConnect, patchSession, replaceSession, push],
+  )
+
+  // 转发给事件监听用（见 autoReconnectRef 的说明）。
+  autoReconnectRef.current = autoReconnect
 
   /** 「仅保存」：只写进主机列表，不建立连接。 */
   const handleSaveOnly = useCallback(
@@ -429,6 +608,8 @@ export default function App() {
         label: '断开连接',
         icon: 'refresh',
         onSelect: () => {
+          // 记一笔：这是用户主动断的，别自动重连。
+          userClosedRef.current.add(s.id)
           void sessionApi.disconnect(s.id).catch(() => {})
           patchSession(s.id, { status: 'disconnected' })
         },
@@ -614,47 +795,20 @@ export default function App() {
             ) : (
               sessions.map((s) => (
                 <div
-                  key={s.id}
+                  // key 用**稳定**的 uid —— 重连会换 session id，
+                  // 用 id 的话终端组件会被重建，断线前的屏幕内容全丢。
+                  key={s.uid}
                   className={`stage-pane${s.id === activeId ? ' is-active' : ''}`}
                   style={{ visibility: s.id === activeId ? 'visible' : 'hidden' }}
                 >
-                  {s.status === 'connected' ? (
-                    <TerminalView sessionId={s.id} active={s.id === activeId} cwd={s.cwd} />
-                  ) : s.status === 'connecting' ? (
-                    <div className="stage-status">
-                      <span className="spinner" />
-                      <span>正在连接 {s.label}…</span>
-                    </div>
-                  ) : (
-                    <div className="stage-status is-error">
-                      <div className="stage-error">
-                        <div className="stage-error-title">
-                          {s.status === 'failed' ? '连接失败' : '连接已断开'}
-                        </div>
-                        {s.error && (
-                          <>
-                            <div className="stage-error-msg">{s.error.message}</div>
-                            {s.error.hint && <div className="stage-error-hint">{s.error.hint}</div>}
-                          </>
-                        )}
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => {
-                            removeSession(s.id)
-                            void handleConnect({
-                              label: s.label,
-                              host: s.host,
-                              port: s.port,
-                              username: s.username,
-                              authType: s.authType,
-                              save: false,
-                            })
-                          }}
-                        >
-                          重试
-                        </button>
-                      </div>
-                    </div>
+                  {/* 终端一直留在下面 —— 断了也不抹掉屏幕上的内容。 */}
+                  <TerminalView sessionId={s.id} active={s.id === activeId} cwd={s.cwd} />
+                  {s.status !== 'connected' && (
+                    <SessionOverlay
+                      session={s}
+                      onReconnect={() => void handleReconnect(s.id)}
+                      onClose={() => removeSession(s.id)}
+                    />
                   )}
                 </div>
               ))

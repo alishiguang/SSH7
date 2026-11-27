@@ -62,7 +62,20 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
 
   cwdRef.current = cwd
 
-  /* ── 终端生命周期 ───────────────────────────── */
+  /**
+   * 当前会话 id。
+   *
+   * 终端实例与 sessionId 是**解耦**的 —— 重连会换一个新的 session id，
+   * 但终端本身不该重建：重建等于把断线前的屏幕内容全丢了。
+   * 于是回调里要发的数据得看**最新**的 id，就靠这个 ref。
+   */
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+
+  /* ── 终端生命周期 ─────────────────────────────
+     分成两个 effect：
+     - 这个只管创建终端，不看 sessionId（所以重连时不会重建）；
+     - 下面那个负责绑定数据源，跟着 sessionId 走。            */
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
@@ -95,27 +108,44 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
     const raf = requestAnimationFrame(() => {
       try {
         fit.fit()
-        void sessionApi.resize(sessionId, term.cols, term.rows)
+        void sessionApi.resize(sessionIdRef.current, term.cols, term.rows)
       } catch {
         /* 会话可能已关闭 */
       }
     })
 
-    // 键盘输入 → SSH
+    // 键盘输入 → SSH（发给**当前**的会话 —— 重连后会换 id）
     const dataSub = term.onData((data) => {
-      void sessionApi.write(sessionId, data).catch(() => {})
+      void sessionApi.write(sessionIdRef.current, data).catch(() => {})
     })
 
     // 尺寸变化
     const ro = new ResizeObserver(() => {
       try {
         fit.fit()
-        void sessionApi.resize(sessionId, term.cols, term.rows)
+        void sessionApi.resize(sessionIdRef.current, term.cols, term.rows)
       } catch {
         /* ignore */
       }
     })
     ro.observe(mount)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      dataSub.dispose()
+      term.dispose()
+      termRef.current = null
+      fitRef.current = null
+    }
+  }, [])
+
+  /* ── 绑定数据源：跟着 sessionId 走 ─────────────
+     重连换了新的 session id，这里重新订阅、把新会话接上来 ——
+     终端屏幕本身留着，用户还能看到断线前的内容。            */
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
 
     // 事件监听必须先注册，再让 Rust 补发缓存的首批输出，否则会丢首屏。
     let disposed = false
@@ -137,6 +167,13 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
           return
         }
         await sessionApi.attach(sessionId).catch(() => {})
+        // 新会话得重新知道终端有多大。
+        try {
+          fitRef.current?.fit()
+          void sessionApi.resize(sessionId, term.cols, term.rows)
+        } catch {
+          /* ignore */
+        }
       } catch (e) {
         // 监听注册失败（比如窗口没有对应权限）会让终端**一直空白**，
         // 而用户看不出发生了什么 —— 只能看到一块黑屏。
@@ -151,15 +188,9 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
 
     return () => {
       disposed = true
-      cancelAnimationFrame(raf)
-      ro.disconnect()
-      dataSub.dispose()
       // 组件卸载时必须解除监听，否则会像旧版一样无限累积（缺陷 #7）
       unlistenData?.()
       unlistenClosed?.()
-      term.dispose()
-      termRef.current = null
-      fitRef.current = null
     }
   }, [sessionId])
 
@@ -182,7 +213,7 @@ export default function TerminalView({ sessionId, active, cwd }: Props) {
   }, [fontSize, sessionId])
 
   /* ── 标签激活时重新 fit + 聚焦 ─────────────── */
-  /* 改���标签名的时候不能抢焦点：xterm 一聚焦，改名输入框就失焦，
+  /* 改标签名的时候不能抢焦点：xterm 一聚焦，改名输入框就失焦，
      用户打的字全跑到终端里去了。改名结束后再把焦点还回终端。 */
   const renamingSessionId = useUi((s) => s.renamingSessionId)
   useEffect(() => {

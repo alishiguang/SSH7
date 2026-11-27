@@ -77,7 +77,12 @@ export interface TestResult {
 }
 
 /** 会话状态。 */
-export type SessionStatus = 'connecting' | 'connected' | 'disconnected' | 'failed'
+export type SessionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'failed'
 
 /** 一次成功建立的会话。 */
 export interface SessionInfo {

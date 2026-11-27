@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { useSessions } from './sessions'
+import { buildReconnectRequest, RECONNECT_DELAYS, useSessions } from './sessions'
 
 const base = {
   id: 's1',
@@ -163,5 +163,53 @@ describe('useSessions.replace', () => {
     const { sessions } = useSessions.getState()
     expect(sessions).toHaveLength(1)
     expect(sessions[0].id).toBe('s1')
+  })
+})
+
+/**
+ * 缺陷 #43 的回归测试。
+ *
+ * 旧的「重试」按钮没带 `hostId` 和 `privateKeyPath` —— 后端取不到凭据，
+ * 所以**每次重连都是失败的**。
+ */
+describe('buildReconnectRequest', () => {
+  const withCreds = {
+    ...base,
+    status: 'disconnected' as const,
+    hostId: 'h-123',
+    privateKeyPath: '/Users/me/.ssh/id_ed25519',
+  }
+
+  it('带上凭据来源 —— 否则后端取不回密码', () => {
+    const req = buildReconnectRequest(withCreds)
+    expect(req.hostId).toBe('h-123')
+    expect(req.privateKeyPath).toBe('/Users/me/.ssh/id_ed25519')
+  })
+
+  it('连接参数原样带过去', () => {
+    const req = buildReconnectRequest(withCreds)
+    expect(req.host).toBe('10.0.0.1')
+    expect(req.port).toBe(22)
+    expect(req.username).toBe('root')
+    expect(req.authType).toBe('password')
+    expect(req.label).toBe('生产服务器')
+  })
+
+  it('重连不重新保存主机', () => {
+    expect(buildReconnectRequest(withCreds).save).toBe(false)
+  })
+
+  it('没记下 hostId 时也不会瞎编一个', () => {
+    const req = buildReconnectRequest({ ...base, status: 'disconnected' })
+    expect(req.hostId).toBeUndefined()
+  })
+})
+
+describe('RECONNECT_DELAYS', () => {
+  it('第一次立刻试，之后逐步退避', () => {
+    expect(RECONNECT_DELAYS[0]).toBe(0)
+    for (let i = 1; i < RECONNECT_DELAYS.length; i++) {
+      expect(RECONNECT_DELAYS[i]).toBeGreaterThan(RECONNECT_DELAYS[i - 1])
+    }
   })
 })

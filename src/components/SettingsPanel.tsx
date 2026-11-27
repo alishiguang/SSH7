@@ -25,7 +25,7 @@ interface Props {
  * 设置面板。
  *
  * 只管**显示偏好**（字号、界面缩放）。
- * 凭据存放位置不再给用户选 —— 永远���本地加密文件。
+ * 凭据存放位置不再给用户选 —— 永远是本地加密文件。
  */
 export default function SettingsPanel({ onClose, askConfirm }: Props) {
   const ref = useRef<HTMLDivElement>(null)

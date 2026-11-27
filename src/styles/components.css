@@ -58,50 +58,155 @@
   inset: 0;
 }
 
-.stage-status {
+/* ── 会话状态浮层 ───────────────────────────────
+   终端一直留在下面，断线时不抹掉屏幕上的内容；
+   浮层只负责把「发生了什么」说清楚。            */
+
+.session-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  gap: 10px;
-  color: var(--cream-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: 0.06em;
+  background: rgba(8, 8, 10, 0.74);
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.18s var(--ease);
 }
 
-.stage-status.is-error {
-  align-items: flex-start;
+.session-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 320px;
+  max-width: 440px;
+  padding: 30px 38px 26px;
+  border: 1px solid var(--line);
+  background: var(--ink-800);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+  animation: fade-up 0.26s var(--ease);
 }
 
-.stage-error {
-  max-width: 460px;
-  margin: 12vh auto 0;
-  padding: 22px 24px;
-  border: 1px solid var(--red-line);
-  background: var(--red-wash);
-  animation: fade-up 0.25s var(--ease);
+.session-panel.is-connecting {
+  border-color: var(--line-strong);
 }
-.stage-error-title {
+
+.session-panel.is-reconnecting {
+  border-color: var(--red-line);
+}
+
+.session-panel.is-lost,
+.session-panel.is-failed {
+  border-color: var(--red-line);
+  background: linear-gradient(var(--red-wash), var(--red-wash)), var(--ink-800);
+}
+
+.session-panel-title {
+  margin-top: 4px;
   font-family: var(--font-display);
-  font-size: calc(20px * var(--ui-scale));
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--red);
-  margin-bottom: 10px;
+  font-size: calc(21px * var(--ui-scale));
+  letter-spacing: 0.03em;
+  color: var(--cream);
+  text-align: center;
 }
-.stage-error-msg {
+
+.session-panel.is-lost .session-panel-title,
+.session-panel.is-failed .session-panel-title {
+  color: var(--red);
+}
+
+.session-panel-sub {
   font-family: var(--font-mono);
   font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  color: var(--cream-3);
+}
+
+.session-panel-note {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.08em;
+  color: var(--cream-2);
+}
+
+.session-panel-msg {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  line-height: 1.6;
   color: var(--cream);
-  margin-bottom: 8px;
+  text-align: center;
   word-break: break-word;
 }
-.stage-error-hint {
+
+.session-panel-hint {
   font-size: var(--fs-label);
-  color: var(--cream-2);
   line-height: 1.6;
-  margin-bottom: 16px;
+  color: var(--cream-2);
+  text-align: center;
+}
+
+.session-panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* 重连中的信号弧：一圈慢慢转的弧。 */
+.signal-arc {
+  animation: spin 1.35s linear infinite;
+}
+
+.signal-arc-track {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2;
+}
+
+.signal-arc-live {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 38 82;
+}
+
+/* 断线的信号：波纹被划掉。 */
+.signal-off {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.signal-off circle {
+  fill: var(--red);
+  stroke: none;
+}
+
+/* 呼吸的三个点：表示「还在试」。 */
+.reconnect-dots {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.reconnect-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--cream-3);
+  animation: pulse-dot 1.25s ease-in-out infinite;
+}
+
+.reconnect-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.reconnect-dots i:nth-child(3) {
+  animation-delay: 0.36s;
 }
 
 /* ── 侧边栏 ───────────────────────────────── */
