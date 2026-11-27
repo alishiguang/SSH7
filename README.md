@@ -10,7 +10,7 @@
 
 多会话终端 · SFTP 文件管理 · 拖拽传输 · 密码存本地加密凭据库
 
-[MIT 协议](LICENSE) · macOS / Windows / Linux
+[MIT 协议](LICENSE) · macOS / Windows（Linux 的代码每次提交都在 CI 上编译并跑测试，装包还在路上）
 
 📖 **[使用手册](docs/使用手册.md)** —— 全部功能与故障排查
 
@@ -75,6 +75,13 @@ SSH7 把 **SSH 协议、SFTP、密钥解析、凭据存储全部搬到 Rust**：
 
 下载 [Releases](https://github.com/chuaker7/SSH7/releases) 里的 `.dmg`，拖入「应用程序」。
 
+### Windows
+
+下载 [Releases](https://github.com/chuaker7/SSH7/releases) 里的 `-setup.exe`（NSIS 安装包），双击安装。
+
+- **SmartScreen 会拦一下** —— 安装包没有做代码签名。点「更多信息」→「仍要运行」即可。
+- **需要 WebView2** —— Win11 自带；Win10 一般随 Edge 已经有了。真没有的话安装程序会联网自动补上。
+
 ### 从源码构建
 
 需要 [Rust](https://rustup.rs/) 1.82+、Node.js 20+。
@@ -93,7 +100,8 @@ npm run tauri build
 
 产物在 `src-tauri/target/release/bundle/`。
 
-> **macOS 依赖**：russh 使用 `ring` 作为加密后端，只需要 C 编译器，不需要 cmake。
+> **依赖**：russh 使用 `ring` 作为加密后端，只需要 C 编译器，不需要 cmake；
+> Windows 上也不需要 nasm（ring 自带预汇编好的目标文件）。
 > `ssh-keygen` 可选，用于把传统 PEM 私钥自动转换成 OpenSSH 格式。
 
 ## 架构
@@ -156,8 +164,9 @@ arm64 里是连续的、在 x64 里就断了（x64 的包一直是对的，却�
 
 CI 和发布流水线都接了这一步。
 
-持续集成由 GitHub Actions 托管：前端构建与单测、Rust `fmt` / `clippy` / `test`、macOS 打包。
-推送 `v*` 标签会自动构建 arm64 / x64 / universal 的 `.dmg` 并发布 Release。
+持续集成由 GitHub Actions 托管：前端构建与单测、Rust `fmt` / `clippy` / `test`、
+**macOS 与 Windows 打包**。推送 `v*` 标签会自动构建 arm64 / x64 / universal 的
+`.dmg` 与 Windows 的 NSIS 安装包（`-setup.exe`），并发布到一个 Release 里。
 
 ## 测试覆盖
 
