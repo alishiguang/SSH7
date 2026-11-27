@@ -112,6 +112,43 @@ const CLEAR_AND_RESTORE: &str = concat!(
     " || printf '\\033[31mSSH7: 无法恢复终端回显，输入不会显示\\033[0m\\n'"
 );
 
+/// bash：把刚注入的两行从 history 里抹掉。
+///
+/// 钩子是写进 PTY **输入流**的 —— shell 把它当成用户亲手敲的命令，于是
+/// 这几行进了用户的 history。用户在自己的服务器上执行 `history`，就能看到
+/// `__ssh7_osc7`、`stty echo` 这种看不懂的东西（缺陷 #42）。
+///
+/// **屏幕上看不见 ≠ 没进 history** —— 这是两回事。
+///
+/// bash 是在**执行前**就把命令行记进 history 的，所以「同一条命令里关掉
+/// history」救不了自己。但 `history -d` 能删 —— 它删的正是刚执行的那条。
+///
+/// 位置不能靠 `HISTCMD` 算：bash 3.2 删掉条目之后计数器会回退，bash 5.x
+/// 不会 —— 同一段代码在两个版本上算出来的位置不一样，一个删得到、一个删
+/// 不到。所以位置直接问 `history` 要（它报的就是列表位置），两个版本一致。
+///
+/// 两行得**一起删**，而且先删最后一条：删掉靠前的那条会让后面那条的位置
+/// 往前挪一位。
+///
+/// 下手之前先确认最近两条**确实都是我们的**：一个标记来自钩子本体
+/// （`__ssh7_osc7`），另一个来自这段清理代码自己（`__ssh7-clean`）。
+/// 万一用户自己关掉了 history，这两行压根没被记录，最近两条就是他自己的
+/// 命令 —— 那就不能删。宁可留两条我们的痕迹，也不能删掉用户的记录。
+const BASH_HISTORY_CLEANUP: &str = concat!(
+    "__ssh7_h=$(history 2); ",
+    "case \"$__ssh7_h\" in *'__ssh7_osc7'*'__ssh7-clean'*) ",
+    "__ssh7_p1=${__ssh7_h%%$'\\n'*}; __ssh7_p2=${__ssh7_h##*$'\\n'}; ",
+    "read -r __ssh7_p1 _ <<< \"$__ssh7_p1\"; read -r __ssh7_p2 _ <<< \"$__ssh7_p2\"; ",
+    "history -d \"$__ssh7_p2\" 2>/dev/null; history -d \"$__ssh7_p1\" 2>/dev/null;; esac; ",
+    "unset __ssh7_h __ssh7_p1 __ssh7_p2"
+);
+
+/// zsh：zsh 没有 `history -d`，但有 `HIST_IGNORE_SPACE` —— 以空格开头的命令
+/// 不进 history。这个选项运行时就能开关：开 → 注入（带前导空格）→ 关。
+/// 用户的设置原样还回去，不会被改掉。
+const ZSH_HISTORY_ON: &str = "setopt HIST_IGNORE_SPACE";
+const ZSH_HISTORY_OFF: &str = "unsetopt HIST_IGNORE_SPACE";
+
 /// 组装「静默安装工作目录钩子」要发给远端的那两行命令。
 ///
 /// 远端 PTY 在 `pty-req` 阶段就关掉了回显，所以这两行既不会被内核回显，
@@ -120,9 +157,34 @@ const CLEAR_AND_RESTORE: &str = concat!(
 /// 第一行是钩子本体（单行命令）；第二行擦掉多出来的提示符并把回显还回去。
 /// 即使 shell 不认识（[`ShellKind::Unknown`]），第二行也要发 ——
 /// 回显是我们关的，必须由我们还。
+///
+/// **行数必须保持两行**：多一行就多打一次提示符，屏幕上就会多出一行。
+/// history 清理因此是**追加在原有命令后面**，而不是另起一行。
+///
+/// 至于 history 本身能不能抹干净，因 shell 而异：
+///
+/// - **bash** —— 完全抹干净（`history -d` 自删）。
+/// - **zsh** —— 抹掉两条，剩下「打开忽略选项」那一条短的。
+/// - **fish / 认不出来的 shell** —— 没有对应机制，只能留着。
 pub fn install_command(shell: ShellKind) -> String {
-    let hook = hook_script(shell).unwrap_or(NOOP);
-    format!("{hook}\n{CLEAR_AND_RESTORE}\n")
+    match shell {
+        ShellKind::Bash => {
+            let hook = hook_script(ShellKind::Bash).unwrap_or(NOOP);
+            // 清理放在第二行：两行都还在列表里的时候一次删掉。
+            format!("{hook}\n{CLEAR_AND_RESTORE}; {BASH_HISTORY_CLEANUP}\n")
+        }
+        ShellKind::Zsh => {
+            let hook = hook_script(ShellKind::Zsh).unwrap_or(NOOP);
+            // 第一行开着忽略选项装钩子；第二行带前导空格（于是不进 history），
+            // 擦完提示符、还完回显，再把选项关回去。
+            format!("{ZSH_HISTORY_ON}; {hook}\n {CLEAR_AND_RESTORE}; {ZSH_HISTORY_OFF}\n")
+        }
+        ShellKind::Fish => {
+            let hook = hook_script(ShellKind::Fish).unwrap_or(NOOP);
+            format!("{hook}\n{CLEAR_AND_RESTORE}\n")
+        }
+        ShellKind::Unknown => format!("{NOOP}\n{CLEAR_AND_RESTORE}\n"),
+    }
 }
 
 /// 用于探测远端 shell 的命令。
@@ -283,5 +345,139 @@ mod tests {
         let cmd = install_command(ShellKind::Unknown);
         assert!(cmd.contains("stty echo"), "实际: {cmd}");
         assert!(!cmd.contains("__ssh7_osc7"), "实际: {cmd}");
+    }
+
+    /// 缺陷 #42 的回归测试：bash 的安装命令必须把自己从 history 里抹掉。
+    ///
+    /// 钩子是写进 PTY 输入流的 —— shell 把它当成用户敲的命令执行，
+    /// 于是它进了用户的 history。用户执行 `history` 不该看到这些内部命令。
+    #[test]
+    fn bash_install_command_cleans_up_its_own_history_entry() {
+        let cmd = install_command(ShellKind::Bash);
+        assert!(
+            cmd.contains("history -d"),
+            "bash 必须删掉自己那两条 history，实际: {cmd}"
+        );
+        assert_eq!(
+            cmd.matches("history -d").count(),
+            2,
+            "两行要一起删，实际: {cmd}"
+        );
+    }
+
+    /// 位置必须问 `history` 要，不能靠 `HISTCMD` 算。
+    ///
+    /// bash 3.2 删条目后计数器会回退，bash 5.x 不会 —— 同一段代码在两个
+    /// 版本上算出来的位置不一样，一个删得到、一个删不到。
+    #[test]
+    fn bash_history_cleanup_reads_positions_from_history() {
+        let cmd = install_command(ShellKind::Bash);
+        assert!(
+            !cmd.contains("HISTCMD"),
+            "位置不能靠 HISTCMD 算 —— bash 3.2 和 5.x 行为不一样，实际: {cmd}"
+        );
+        assert!(
+            cmd.contains("$(history 2)"),
+            "必须从 history 要位置，实际: {cmd}"
+        );
+    }
+
+    /// 删之前必须先确认最近两条确实是我们的。
+    ///
+    /// 万一用户自己关掉了 history，这两行压根没被记录 ——
+    /// 那最近两条就是他自己的命令，删掉就是数据丢失。
+    #[test]
+    fn bash_history_cleanup_checks_before_deleting() {
+        let cmd = install_command(ShellKind::Bash);
+        // 两个标记各归其位：钩子本体的名字 + 这段清理代码自己的标记。
+        assert!(
+            cmd.contains("*'__ssh7_osc7'*'__ssh7-clean'*)"),
+            "确认用的标记必须是两个独一份的，实际: {cmd}"
+        );
+        // 保护判断和删除动作必须成对出现，顺序是先判断后删除。
+        let guard_pos = cmd.find("case \"$__ssh7_h\"").unwrap();
+        let del_pos = cmd.find("history -d").unwrap();
+        assert!(guard_pos < del_pos, "必须先确认再删除，实际: {cmd}");
+    }
+
+    /// 清理必须放在第二行 —— 两行都还在 history 列表里的时候一次删掉。
+    ///
+    /// 放在第一行的话，钩子那行先被删掉，第二行按旧位置去删就会删错东西。
+    #[test]
+    fn bash_history_cleanup_runs_on_the_second_line() {
+        let cmd = install_command(ShellKind::Bash);
+        let lines: Vec<&str> = cmd.lines().collect();
+        assert_eq!(lines.len(), 2, "实际: {cmd}");
+        assert!(
+            !lines[0].contains("history -d"),
+            "清理不能放在第一行，实际: {cmd}"
+        );
+        assert!(
+            lines[1].contains("history -d"),
+            "清理必须放在第二行，实际: {cmd}"
+        );
+    }
+
+    /// 缺陷 #42 的回归测试：zsh 没有 `history -d`，改用忽略空格选项。
+    ///
+    /// 选项运行时就能开关，所以用户的设置原样还回去 —— 不能改了不还。
+    #[test]
+    fn zsh_install_command_uses_ignore_space_and_restores_it() {
+        let cmd = install_command(ShellKind::Zsh);
+        assert!(
+            cmd.contains("setopt HIST_IGNORE_SPACE"),
+            "zsh 必须开忽略空格选项，实际: {cmd}"
+        );
+        assert!(
+            cmd.contains("unsetopt HIST_IGNORE_SPACE"),
+            "zsh 必须把选项关回去，不能改了不还，实际: {cmd}"
+        );
+        // 钩子那一行之后、恢复回显那一行必须带前导空格 —— 靠它躲开 history。
+        let lines: Vec<&str> = cmd.lines().collect();
+        assert_eq!(lines.len(), 2, "zsh 的安装命令应该是两行，实际: {cmd}");
+        assert!(
+            lines[1].starts_with(' '),
+            "zsh 的第二行必须以空格开头才会被 history 忽略，实际: {cmd}"
+        );
+        assert!(
+            lines[1].contains("unsetopt HIST_IGNORE_SPACE"),
+            "zsh 的第二行负责把选项关回去，实际: {cmd}"
+        );
+    }
+
+    /// 缺陷 #42 的回归测试：fish 没有对应机制，保持原样（两行，不做清理）。
+    #[test]
+    fn fish_install_command_stays_two_lines_without_cleanup() {
+        let cmd = install_command(ShellKind::Fish);
+        assert_eq!(cmd.lines().count(), 2, "实际: {cmd}");
+        assert!(
+            !cmd.contains("history -d"),
+            "fish 没有 history -d 可用，实际: {cmd}"
+        );
+    }
+
+    /// 缺陷 #21 / #42 的共同约束：**行数必须是两行**。
+    ///
+    /// 多一行就多打一次提示符，屏幕上就会多出一行；history 清理只能
+    /// 追加在原有命令后面，不能另起一行。
+    #[test]
+    fn install_command_is_always_two_lines() {
+        for shell in [
+            ShellKind::Bash,
+            ShellKind::Zsh,
+            ShellKind::Fish,
+            ShellKind::Unknown,
+        ] {
+            let cmd = install_command(shell);
+            assert_eq!(
+                cmd.lines().count(),
+                2,
+                "{shell:?} 的安装命令应该是两行，实际: {cmd}"
+            );
+            assert!(
+                cmd.lines().nth(1).unwrap_or_default().contains("stty echo"),
+                "{shell:?} 的第二行必须负责恢复回显，实际: {cmd}"
+            );
+        }
     }
 }
