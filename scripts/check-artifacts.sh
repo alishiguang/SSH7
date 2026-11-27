@@ -13,11 +13,24 @@
 #
 # ## 现在怎么查
 #
-# 1. **运行时探针**：拿临时 HOME 跑产物，看它到底建了哪个数据目录 ——
+# 1. **产物在位**：每个平台的产物形态不一样 —— macOS 是 dmg，Windows 是 NSIS
+#    的 .exe。先确认产物确实在那儿、不是空壳。
+# 2. **运行时探针**（macOS）：拿临时 HOME 跑产物，看它到底建了哪个数据目录 ——
 #    这直接读的是**二进制内嵌的标识符**，跑出来什么就是什么。
-# 2. **逐目标 codegen 自检**：对每个目标跑 Rust 自检（含读内嵌上下文的那几条），
-#    确认权限与标识符在编译期就是对的。
 # 3. **依赖图检查**：确认 `keyring` 那套彻底没了。
+# 4. **逐目标 codegen 自检**：对每个目标跑 Rust 自检（含读内嵌上下文的那几条），
+#    确认权限与标识符在编译期就是对的。
+#
+# ## 为什么 Windows 上没有运行时探针
+#
+# `dirs::config_dir()` 在 Windows 上走的是 **WinAPI 的 known-folder**
+# （`FOLDERID_RoamingAppData`），**不看 `APPDATA` 环境变量** ——
+# 所以探针没法像 macOS 那样用临时 HOME 把产物隔离到一个临时目录。
+#
+# 而「产物里带的标识符对不对」这件事，第 4 步的 `app_identity` 自检
+# 读的是**同一份内嵌上下文**（`tauri::generate_context!()`），一样是编译期
+# 的事实来源，还不用起进程。所以 Windows 上用编译期自检钉住，
+# 不做没有意义的运行时探针。
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
@@ -31,25 +44,105 @@ fail=0
 note() { printf "  %s\n" "$*"; }
 bad() { printf "  ✗ %s\n" "$*"; fail=1; }
 
-# ---------------------------------------------------------------------------
-# 1. 运行时探针：产物实际用的是哪个标识符
-# ---------------------------------------------------------------------------
-probe_identifier() {
-  local label="$1" bin="$2"
-  [ -f "$bin" ] || { note "跳过 ${label}（还没构建）"; return; }
+# ── 宿主平台 ─────────────────────────────────────────
+# Windows 上 Git Bash 的 uname 是 MINGW64_NT-… / MSYS_NT-…，
+# 要单独认出来 —— 否则会把 Windows 当成 Linux，路径全错。
+case "$(uname -s)" in
+  Darwin*) HOST_OS="macos" ;;
+  MINGW* | MSYS* | CYGWIN*) HOST_OS="windows" ;;
+  *) HOST_OS="linux" ;;
+esac
 
-  local home
-  home="$(mktemp -d "${TMPDIR:-/tmp}/ssh7-probe.XXXXXX")"
-  HOME="$home" SSH7_LOG=off timeout 15 "$bin" >/dev/null 2>&1
-  local made
-  made="$(ls "$home/Library/Application Support" 2>/dev/null | head -1)"
-  rm -rf "$home"
+# 这个平台要自检的 Rust 目标。
+case "$HOST_OS" in
+  macos) HOST_TARGETS=("aarch64-apple-darwin" "x86_64-apple-darwin") ;;
+  windows) HOST_TARGETS=("x86_64-pc-windows-msvc") ;;
+  *) HOST_TARGETS=("x86_64-unknown-linux-gnu") ;;
+esac
 
+# 产物最小体积（字节）—— 太小的多半是空壳或者构建没跑完。
+MIN_SIZE=$((1024 * 1024))
+
+# ── 1. 产物在位 ─────────────────────────────────────
+check_artifacts_present() {
+  note "--- ${HOST_OS}：产物在位 ---"
+  case "$HOST_OS" in
+    macos)
+      for triple in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
+        local dir="$TARGET_DIR/$triple/release/bundle/dmg"
+        if ls "$dir"/SSH7_*.dmg >/dev/null 2>&1; then
+          note "✓ ${triple}：$(ls -1 "$dir"/SSH7_*.dmg | wc -l | tr -d ' ') 个 DMG"
+        else
+          note "跳过 ${triple}（还没构建）"
+        fi
+      done
+      ;;
+    windows)
+      local nsis="$TARGET_DIR/release/bundle/nsis"
+      local exe="$TARGET_DIR/release/ssh7.exe"
+      local found=0
+      for f in "$nsis"/*.exe; do
+        [ -f "$f" ] || continue
+        found=1
+        local size
+        size=$(wc -c <"$f" | tr -d ' ')
+        if [ "$size" -lt "$MIN_SIZE" ]; then
+          bad "NSIS 安装包太小（${size} 字节）：$(basename "$f") —— 多半没构建完"
+        else
+          note "✓ NSIS 安装包：$(basename "$f")（$((size / 1024 / 1024)) MB）"
+        fi
+      done
+      [ "$found" -eq 1 ] || bad "没有 NSIS 安装包（$nsis）"
+      if [ -f "$exe" ]; then
+        local size
+        size=$(wc -c <"$exe" | tr -d ' ')
+        if [ "$size" -lt "$MIN_SIZE" ]; then
+          bad "主程序太小（${size} 字节）—— 多半没构建完"
+        else
+          note "✓ 主程序：ssh7.exe（$((size / 1024 / 1024)) MB）"
+        fi
+      else
+        bad "没有主程序 ssh7.exe（$exe）"
+      fi
+      ;;
+    linux)
+      local dir="$TARGET_DIR/release/bundle"
+      for kind in deb appimage; do
+        if ls "$dir/$kind"/* >/dev/null 2>&1; then
+          note "✓ $kind"
+        else
+          note "跳过 $kind（还没构建）"
+        fi
+      done
+      ;;
+  esac
+}
+
+# ── 2. 运行时探针（产物内嵌的标识符）─────────────────
+#
+# 跑一会儿就把产物弄掉 —— 它是 GUI 程序，不主动退出。
+# `timeout` 不一定有（macOS 默认不带），所以留一条手工兜底。
+run_briefly() {
+  local bin="$1"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 15 "$bin" >/dev/null 2>&1
+  else
+    "$bin" >/dev/null 2>&1 &
+    local pid=$!
+    sleep 12
+    kill "$pid" >/dev/null 2>&1
+    wait "$pid" >/dev/null 2>&1
+  fi
+}
+
+# 探针跑完之后的判定。$1=标签 $2=产物实际建出来的目录名（空=没建出来）
+judge_probe() {
+  local label="$1" made="$2"
   if [ "$made" = "$EXPECTED_IDENTIFIER" ]; then
     note "✓ ${label}：运行时用的是 ${EXPECTED_IDENTIFIER}"
   elif [ -z "$made" ]; then
-    # 二进制跑不起来（常见于交叉编译产物，缺 Rosetta）—— 不算失败，但要说清楚
-    note "⚠ ${label}：探针没能跑起来（可能缺 Rosetta），标识符未验证"
+    # 产物跑不起来（常见于交叉编译产物，缺 Rosetta）—— 不算失败，但要说清楚
+    note "⚠ ${label}：探针没能跑起来，标识符未验证"
   else
     bad "${label}：运行时用的是 '${made}'，应该是 ${EXPECTED_IDENTIFIER}"
     for legacy in "${LEGACY_IDENTIFIERS[@]}"; do
@@ -58,9 +151,40 @@ probe_identifier() {
   fi
 }
 
-# ---------------------------------------------------------------------------
-# 2. 逐目标 codegen 自检
-# ---------------------------------------------------------------------------
+probe_identifier_macos() {
+  local label="$1" bin="$2"
+  [ -f "$bin" ] || {
+    note "跳过 ${label}（还没构建）"
+    return
+  }
+
+  local home
+  home="$(mktemp -d "${TMPDIR:-/tmp}/ssh7-probe.XXXXXX")"
+  HOME="$home" SSH7_LOG=off run_briefly "$bin"
+  local made
+  made="$(ls "$home/Library/Application Support" 2>/dev/null | head -1)"
+  rm -rf "$home"
+
+  judge_probe "$label" "$made"
+}
+
+# ── 3. 依赖图检查 ───────────────────────────────────
+check_no_keyring() {
+  note "--- 钥匙串那套必须彻底没了 ---"
+  if (cd src-tauri && cargo tree --edges normal 2>/dev/null | grep -q 'keyring'); then
+    bad "依赖图里还有 keyring"
+  else
+    note "✓ 依赖图里没有 keyring"
+  fi
+  if grep -rn "credential_store\|credential_store_info\|SecretBackend" src-tauri/src src/ >/dev/null 2>&1; then
+    bad "源码里还有 credential_store / SecretBackend 之类的东西"
+    grep -rn "credential_store\|credential_store_info\|SecretBackend" src-tauri/src src/ 2>/dev/null | sed 's/^/     /' | head -5
+  else
+    note "✓ 源码里没有 credential_store / SecretBackend"
+  fi
+}
+
+# ── 4. 逐目标编译期自检 ─────────────────────────────
 check_target_tests() {
   local triple="$1"
   local dir="$TARGET_DIR/$triple"
@@ -97,34 +221,38 @@ check_universal_slices() {
 }
 
 echo "=== 发布前产物自检 ==="
+echo "宿主平台：${HOST_OS}"
 
 echo
-echo "[1/3] 运行时探针（产物内嵌的标识符）"
-for triple in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
-  probe_identifier "$triple" "$TARGET_DIR/$triple/release/ssh7"
-done
-probe_identifier "已安装的 /Applications/SSH7.app" "/Applications/SSH7.app/Contents/MacOS/SSH7"
+echo "[1/4] 产物在位"
+check_artifacts_present
 
 echo
-echo "[2/3] 钥匙串那套必须彻底没了"
-if (cd src-tauri && cargo tree --edges normal 2>/dev/null | grep -q 'keyring'); then
-  bad "依赖图里还有 keyring"
+echo "[2/4] 运行时探针（产物内嵌的标识符）"
+if [ "$HOST_OS" = "macos" ]; then
+  for triple in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
+    probe_identifier_macos "$triple" "$TARGET_DIR/$triple/release/ssh7"
+  done
+  # 只构建宿主架构时（没有 --target），产物落在 target/release/ 下。
+  probe_identifier_macos "宿主架构产物" "$TARGET_DIR/release/ssh7"
+  probe_identifier_macos "已安装的 /Applications/SSH7.app" "/Applications/SSH7.app/Contents/MacOS/SSH7"
 else
-  note "✓ 依赖图里没有 keyring"
-fi
-if grep -rn "credential_store\|credential_store_info\|SecretBackend" src-tauri/src src/ >/dev/null 2>&1; then
-  bad "源码里还有 credential_store / SecretBackend 之类的东西"
-  grep -rn "credential_store\|credential_store_info\|SecretBackend" src-tauri/src src/ 2>/dev/null | sed 's/^/     /' | head -5
-else
-  note "✓ 源码里没有 credential_store / SecretBackend"
+  note "⚠ ${HOST_OS}：跳过运行时探针 —— 数据目录走 WinAPI 的 known-folder，"
+  note "  环境变量重定向不了，没法隔离。标识符改由下面第 4 步的编译期自检钉住。"
 fi
 
 echo
-echo "[3/3] 逐目标编译期自检"
-for triple in aarch64-apple-darwin x86_64-apple-darwin; do
+echo "[3/4] 钥匙串那套必须彻底没了"
+check_no_keyring
+
+echo
+echo "[4/4] 逐目标编译期自检"
+for triple in "${HOST_TARGETS[@]}"; do
   check_target_tests "$triple"
 done
-check_universal_slices
+if [ "$HOST_OS" = "macos" ]; then
+  check_universal_slices
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then
@@ -134,5 +262,9 @@ fi
 
 echo "✅ 产物自检通过。"
 echo
-echo "   DMG 清单："
-ls -lh "$TARGET_DIR"/*/release/bundle/dmg/*.dmg 2>/dev/null | awk '{print "     " $9 "  " $5}' || true
+echo "   产物清单："
+case "$HOST_OS" in
+  macos) ls -lh "$TARGET_DIR"/*/release/bundle/dmg/*.dmg 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
+  windows) ls -lh "$TARGET_DIR"/release/bundle/nsis/*.exe 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
+  *) ls -lh "$TARGET_DIR"/release/bundle/*/* 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
+esac

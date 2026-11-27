@@ -8,6 +8,17 @@
 //!
 //! 真机端到端验证在 `history_clean_e2e.rs`（需要真实服务器）。
 
+//! **只在 unix 上跑。**
+//!
+//! 这个测试要的是一台**本机的 POSIX shell** —— Windows 上没有 bash/zsh 可言：
+//! Git 附带的那个在 MSYS 里，`System32\bash.exe` 又是 WSL 的启动器
+//! （没装发行版时它会直接报错退出），两者都不是能拿来验证 shell 行为的对象。
+//!
+//! 平台差异不等于缺陷 —— SSH7 在 Windows 上连的是**远端**的 POSIX shell，
+//! 钩子的行为跟宿主平台无关。所以这里按 unix 门控：Windows 上这几个用例
+//! 不存在，Linux / macOS 的 CI 照跑不误。
+#![cfg(unix)]
+
 use std::io::Write;
 use std::process::{Command, Stdio};
 
