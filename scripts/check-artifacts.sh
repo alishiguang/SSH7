@@ -60,6 +60,10 @@ case "$HOST_OS" in
   *) HOST_TARGETS=("x86_64-unknown-linux-gnu") ;;
 esac
 
+# 本机 Rust 的宿主目标 —— 只构建宿主架构时，产物落在 target/release/ 下，
+# 没有 triple 子目录。用来判断「这个目标是不是就是本机的」。
+NATIVE_TARGET="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"
+
 # 产物最小体积（字节）—— 太小的多半是空壳或者构建没跑完。
 MIN_SIZE=$((1024 * 1024))
 
@@ -68,14 +72,24 @@ check_artifacts_present() {
   note "--- ${HOST_OS}：产物在位 ---"
   case "$HOST_OS" in
     macos)
-      for triple in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
-        local dir="$TARGET_DIR/$triple/release/bundle/dmg"
+      # 宿主架构的构建落在 target/release/ 下，带 --target 的才在各自的目录里 ——
+      # 两种都得查，不然 CI 里那种「只构建宿主架构」的跑法会一个都找不到。
+      local found=0
+      for pair in \
+        "宿主架构:$TARGET_DIR/release/bundle/dmg" \
+        "aarch64-apple-darwin:$TARGET_DIR/aarch64-apple-darwin/release/bundle/dmg" \
+        "x86_64-apple-darwin:$TARGET_DIR/x86_64-apple-darwin/release/bundle/dmg" \
+        "universal-apple-darwin:$TARGET_DIR/universal-apple-darwin/release/bundle/dmg"; do
+        local label="${pair%%:*}" dir="${pair#*:}"
         if ls "$dir"/SSH7_*.dmg >/dev/null 2>&1; then
-          note "✓ ${triple}：$(ls -1 "$dir"/SSH7_*.dmg | wc -l | tr -d ' ') 个 DMG"
+          found=$((found + 1))
+          note "✓ ${label}：$(ls -1 "$dir"/SSH7_*.dmg | wc -l | tr -d ' ') 个 DMG"
         else
-          note "跳过 ${triple}（还没构建）"
+          note "跳过 ${label}（还没构建）"
         fi
       done
+      # 至少得有一个 —— 一个都没有就是打包没成功。
+      [ "$found" -ge 1 ] || bad "一个 DMG 都没有 —— 打包多半没成功"
       ;;
     windows)
       local nsis="$TARGET_DIR/release/bundle/nsis"
@@ -188,6 +202,13 @@ check_no_keyring() {
 check_target_tests() {
   local triple="$1"
   local dir="$TARGET_DIR/$triple"
+
+  # 宿主架构的构建**没有** triple 子目录 —— 产物就在 target/release/ 下。
+  # 那种情况下自检照样得跑：目录名对不上就悄悄跳过，等于没查。
+  if [ ! -d "$dir" ] && [ "$triple" = "$NATIVE_TARGET" ] && [ -d "$TARGET_DIR/release" ]; then
+    dir="$TARGET_DIR/release"
+    note "  ↳ ${triple} 没有单独构建，改用宿主架构的产物目录"
+  fi
   [ -d "$dir" ] || return
 
   note "--- ${triple}：编译期自检 ---"
@@ -263,8 +284,20 @@ fi
 echo "✅ 产物自检通过。"
 echo
 echo "   产物清单："
+# 清单只是给人看的 —— 一个都没列出来也不能让脚本以失败告终
+# （这一步挂掉会让 CI 判红，而那跟产物本身没关系）。
 case "$HOST_OS" in
-  macos) ls -lh "$TARGET_DIR"/*/release/bundle/dmg/*.dmg 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
-  windows) ls -lh "$TARGET_DIR"/release/bundle/nsis/*.exe 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
-  *) ls -lh "$TARGET_DIR"/release/bundle/*/* 2>/dev/null | awk '{print "     " $9 "  " $5}' ;;
+  macos)
+    ls -lh "$TARGET_DIR"/release/bundle/dmg/*.dmg "$TARGET_DIR"/*/release/bundle/dmg/*.dmg 2>/dev/null |
+      awk '{print "     " $9 "  " $5}' || true
+    ;;
+  windows)
+    ls -lh "$TARGET_DIR"/release/bundle/nsis/*.exe 2>/dev/null |
+      awk '{print "     " $9 "  " $5}' || true
+    ;;
+  *)
+    ls -lh "$TARGET_DIR"/release/bundle/*/* 2>/dev/null |
+      awk '{print "     " $9 "  " $5}' || true
+    ;;
 esac
+exit 0
